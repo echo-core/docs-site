@@ -1,0 +1,38 @@
+default_install_hook_types: # Determines hooks installed by `pre-commit install --install-hooks`.
+-   commit-msg
+-   pre-commit
+-   pre-push
+
+fail_fast: true # Stops on first hook failure.
+
+repos:
+-   repo: https://gitlab.com/vojko.pribudic.foss/pre-commit-update
+    rev: v0.9.0
+    hooks:
+    -   id: pre-commit-update
+-   repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.3.0
+    hooks:
+    -   id: conventional-pre-commit
+        stages: [commit-msg]
+        args: [--verbose] # Failure output helps teach Conventional Commit requirements.
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+    -   id: no-commit-to-branch
+        args: [--branch, master, --branch, main] # Place protected branches here to save headache.
+    -   id: end-of-file-fixer
+    -   id: trailing-whitespace
+    -   id: mixed-line-ending
+    -   id: check-added-large-files
+    -   id: check-json
+    -   id: check-yaml
+        args:
+        -   --allow-multiple-documents
+-   repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.105.0
+    hooks:
+    -   id: terraform_fmt
+    -   id: terraform_tflint
+    #-   id: terraform_docs
+    #    stages: [pre-commit, pre-push]
