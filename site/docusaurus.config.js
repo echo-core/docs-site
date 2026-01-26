@@ -20,10 +20,10 @@ const config = {
   },
 
   // Set the production url of your site here
-  url: 'https://echo-core.github.io',
+  url: 'https://echols.co',
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
-  baseUrl: '/docs-site/',
+  baseUrl: '/',
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
