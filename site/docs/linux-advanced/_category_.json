@@ -1,0 +1,8 @@
+{
+  "label": "Linux Howtos - Advanced",
+  "position": 3,
+  "link": {
+    "type": "generated-index",
+    "description": "Various articles on configuring Linux in various ways."
+  }
+}
