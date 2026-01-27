@@ -52,7 +52,7 @@ const config = {
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
           editUrl:
-            'https://github.com/echo-core/docs/tree/main/site/',
+            'https://github.com/echo-core/docs-site/tree/main/site/',
         },
         blog: {
           showReadingTime: true,
@@ -63,7 +63,7 @@ const config = {
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
           editUrl:
-            'https://github.com/echo-core/docs/tree/main/site/',
+            'https://github.com/echo-core/docs-site/tree/main/site/',
           // Useful options to enforce blogging best practices
           onInlineTags: 'warn',
           onInlineAuthors: 'warn',
