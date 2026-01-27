@@ -32,7 +32,22 @@ const config = {
   trailingSlash: false,
 
   onBrokenLinks: 'throw',
-  onBrokenMarkdownLinks: 'warn',
+  markdown: {
+    hooks: {
+      /**
+       * Handle links in Markdown files that resolve to a missing file or
+       * a non‑existent anchor.
+       *
+       * You can return one of the normal Docusaurus actions:
+       *   'ignore' | 'log' | 'warn' | 'throw'
+       */
+      onBrokenMarkdownLinks: (url, { ref }) => {
+        // Example: log an error and throw, or simply ignore
+        console.warn(`Broken Markdown link found: ${url} referenced from ${ref}`);
+        return 'warn';
+      },
+    },
+  },
 
   // Even if you don't use internationalization, you can use this field to set
   // useful metadata like html lang. For example, if your site is Chinese, you
