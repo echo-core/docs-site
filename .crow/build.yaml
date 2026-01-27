@@ -1,0 +1,17 @@
+variables:
+  - &node_image 'node:lts-alpine'
+
+steps:
+  - name: install-dependencies
+    image: *node_image
+    directory: site/
+    commands:
+      - corepack enable
+      - pnpm install
+
+  - name: build-docusaurus
+    image: *node_image
+    directory: site/
+    commands:
+      - corepack enable
+      - pnpm build
