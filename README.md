@@ -1,5 +1,7 @@
 # Echo Core Documentation Site
 
+[![Build Status](https://ci.echols.co/api/v1/badges/4/status.svg)](https://ci.echols.co/repos/4)
+
 This repository contains the documentation website for Echo Core, built using [Docusaurus](https://docusaurus.io/), a modern static website generator.
 
 ## Project Structure
