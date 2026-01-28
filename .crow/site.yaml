@@ -1,0 +1,55 @@
+variables:
+  - &node_image 'node:lts-alpine'
+  - &surge_image 'docker.io/woodpeckerci/plugin-surge-preview'
+  - path: &site_path
+      - 'site/**'
+      - '.crow/site.yaml'
+
+steps:
+  - name: install-dependencies
+    image: *node_image
+    when:
+      - path: *site_path
+        event: [push, pull_request, manual]
+    directory: site/
+    commands:
+      - corepack enable
+      - pnpm install --frozen-lockfile
+
+  - name: build-site
+    image: *node_image
+    when:
+      - path: *site_path
+        event: [push, pull_request, manual]
+    directory: site/
+    commands:
+      - corepack enable
+      - pnpm build
+
+  - name: deploy-site-preview
+    image: *surge_image
+    when:
+      - path: *site_path
+        event: [pull_request, pull_request_closed]
+    settings:
+      path: 'site/build/'
+      surge_token:
+        from_secret: SURGE_TOKEN
+      forge_repo_token:
+        from_secret: GITHUB_TOKEN_SURGE
+    failure: ignore
+
+  - name: deploy-site
+    image: *node_image
+    when:
+      - branch: main
+        event: [push, manual]
+    directory: site/
+    commands:
+      - corepack enable
+      - pnpm run deploy
+    environment:
+      GIT_USER:
+        from_secret: git_user
+      GIT_PASS:
+        from_secret: git_pat_docs_site
