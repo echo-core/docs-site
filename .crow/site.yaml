@@ -25,6 +25,7 @@ steps:
     commands:
       - corepack enable
       - pnpm build
+    depends_on: [install-dependencies]
 
   - name: deploy-site-preview
     image: *surge_image
