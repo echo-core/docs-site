@@ -25,7 +25,6 @@ steps:
     commands:
       - corepack enable
       - pnpm build
-    depends_on: [install-dependencies]
 
   - name: deploy-site-preview
     image: *surge_image
@@ -38,7 +37,6 @@ steps:
         from_secret: SURGE_TOKEN
       forge_repo_token:
         from_secret: GITHUB_TOKEN_SURGE
-    depends_on: [build-site]
     failure: ignore
 
   - name: deploy-site
