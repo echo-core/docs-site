@@ -23,7 +23,7 @@ steps:
       - corepack enable
       - pnpm build
 
-  - name: deploy-preview
+  - name: deploy-site-preview
     image: docker.io/woodpeckerci/plugin-surge-preview:latest
     settings:
       path: 'site/build/'
@@ -35,3 +35,13 @@ steps:
     when:
       - path: *site_path
         event: [pull_request, pull_request_closed]
+
+  - name: deploy-site
+    image: *node_image
+    when:
+    - branch: main
+      event: [push, manual]
+    directory: site/
+    commands:
+      - corepack enable
+      - pnpm deploy
