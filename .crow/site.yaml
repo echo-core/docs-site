@@ -37,6 +37,7 @@ steps:
         from_secret: SURGE_TOKEN
       forge_repo_token:
         from_secret: GITHUB_TOKEN_SURGE
+    depends_on: [build-site]
     failure: ignore
 
   - name: deploy-site
