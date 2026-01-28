@@ -7,7 +7,7 @@ steps:
     directory: site/
     commands:
       - corepack enable
-      - pnpm install
+      - pnpm install --frozen-lockfile
 
   - name: build-docusaurus
     image: *node_image
