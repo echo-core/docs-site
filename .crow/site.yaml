@@ -16,9 +16,22 @@ steps:
       - corepack enable
       - pnpm install --frozen-lockfile
 
-  - name: build-docusaurus
+  - name: build-site
     image: *node_image
     directory: site/
     commands:
       - corepack enable
       - pnpm build
+
+  - name: deploy-preview
+    image: docker.io/woodpeckerci/plugin-surge-preview:latest
+    settings:
+      path: 'site/build/'
+      surge_token:
+        from_secret: SURGE_TOKEN
+      forge_repo_token:
+        from_secret: GITHUB_TOKEN_SURGE
+    failure: ignore
+    when:
+      - path: *site_path
+        event: [pull_request, pull_request_closed]
