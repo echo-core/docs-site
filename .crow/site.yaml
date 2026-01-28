@@ -5,13 +5,12 @@ variables:
       - 'site/**'
       - '.crow/site.yaml'
 
-when:
-  - path: *site_path
-    event: [push, pull_request, manual]
-
 steps:
   - name: install-dependencies
     image: *node_image
+    when:
+      - path: *site_path
+        event: [push, pull_request, manual]
     directory: site/
     commands:
       - corepack enable
@@ -19,6 +18,9 @@ steps:
 
   - name: build-site
     image: *node_image
+    when:
+      - path: *site_path
+        event: [push, pull_request, manual]
     directory: site/
     commands:
       - corepack enable
@@ -26,6 +28,9 @@ steps:
 
   - name: deploy-site-preview
     image: *surge_image
+    when:
+      - path: *site_path
+        event: [pull_request, pull_request_closed]
     settings:
       path: 'site/build/'
       surge_token:
@@ -33,9 +38,6 @@ steps:
       forge_repo_token:
         from_secret: GITHUB_TOKEN_SURGE
     failure: ignore
-    when:
-      - path: *site_path
-        event: [pull_request, pull_request_closed]
 
   - name: deploy-site
     image: *node_image
