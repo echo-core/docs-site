@@ -46,7 +46,7 @@ steps:
         event: [push, manual]
     directory: site/
     commands:
-      - git
+      - apk add git
       - corepack enable
       - pnpm run deploy
     environment:
