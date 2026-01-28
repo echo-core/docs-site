@@ -1,5 +1,6 @@
 variables:
   - &node_image 'node:lts-alpine'
+  - &surge_image 'docker.io/woodpeckerci/plugin-surge-preview'
   - path: &site_path
       - 'site/**'
       - '.crow/site.yaml'
@@ -24,7 +25,7 @@ steps:
       - pnpm build
 
   - name: deploy-site-preview
-    image: docker.io/woodpeckerci/plugin-surge-preview:latest
+    image: *surge_image
     settings:
       path: 'site/build/'
       surge_token:
