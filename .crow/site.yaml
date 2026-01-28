@@ -42,8 +42,8 @@ steps:
   - name: deploy-site
     image: *node_image
     when:
-    - branch: main
-      event: [push, manual]
+      - branch: main
+        event: [push, manual]
     directory: site/
     commands:
       - corepack enable
