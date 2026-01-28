@@ -46,6 +46,7 @@ steps:
         event: [push, manual]
     directory: site/
     commands:
+      - git
       - corepack enable
       - pnpm run deploy
     environment:
