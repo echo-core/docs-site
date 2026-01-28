@@ -54,3 +54,5 @@ steps:
         from_secret: git_user
       GIT_PASS:
         from_secret: git_pat_docs_site
+      GIT_USER_NAME: crow-bot
+      GIT_USER_EMAIL: deploy@crow.bot
