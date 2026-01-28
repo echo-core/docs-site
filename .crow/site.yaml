@@ -1,5 +1,12 @@
 variables:
   - &node_image 'node:lts-alpine'
+  - path: &site_path
+      - 'site/**'
+      - '.crow/site.yaml'
+
+when:
+  - path: *site_path
+    event: [push, pull_request, manual]
 
 steps:
   - name: install-dependencies
