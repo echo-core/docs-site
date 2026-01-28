@@ -48,4 +48,4 @@ steps:
     directory: site/
     commands:
       - corepack enable
-      - pnpm deploy
+      - pnpm run deploy
