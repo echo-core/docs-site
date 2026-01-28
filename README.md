@@ -18,7 +18,7 @@ docs-site/
 
 ## Prerequisites
 
-- Node.js >= 20.0
+- Node.js >= 20
 - pnpm (enabled via corepack)
 
 ## Getting Started
@@ -48,7 +48,7 @@ docs-site/
 
 ### Local Development
 
-Start the development server:
+Start the development server (from the `site/` directory):
 ```bash
 pnpm start
 ```
@@ -57,7 +57,7 @@ This command starts a local development server and opens up a browser window. Mo
 
 ### Building
 
-Generate static content for production:
+Generate static content for production (from the `site/` directory):
 ```bash
 pnpm build
 ```
@@ -66,7 +66,7 @@ This command generates static content into the `build` directory and can be serv
 
 ### Serving Built Site Locally
 
-To test the production build locally:
+To test the production build locally (from the `site/` directory):
 ```bash
 pnpm serve
 ```
