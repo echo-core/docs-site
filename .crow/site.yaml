@@ -49,3 +49,8 @@ steps:
     commands:
       - corepack enable
       - pnpm run deploy
+    environment:
+      GIT_USER:
+        from_secret: git_user
+      GIT_PASS:
+        from_secret: git_pat_docs_site
