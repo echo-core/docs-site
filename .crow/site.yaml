@@ -66,23 +66,18 @@ steps:
       - |
         set -eu
 
-        msg="${CI_COMMIT_MESSAGE:-}"
-        pr=""
+        msg="$CI_COMMIT_MESSAGE"
 
-        # Merge commit style: "Merge pull request #16 from …"
-        pr="$(printf '%s\n' "$msg" | sed -nE 's/^Merge pull request #([0-9]+).*/\1/p' | head -n1)"
+        # Extract PR number from GitHub merge commit messages
+        pr="$(printf '%s\n' "$msg" | grep -oE 'pull request #[0-9]+' | grep -oE '[0-9]+')"
 
-        # Squash merge style: "Some title (#16)"
-        if [ -z "$pr" ]; then
-          pr="$(printf '%s\n' "$msg" | sed -nE 's/.*\(#([0-9]+)\).*/\1/p' | head -n1)"
-        fi
-
-        if [ -z "$pr" ]; then
-          echo "No PR number found in commit message; skipping preview teardown."
+        if [ -z "${pr:-}" ]; then
+          echo "No PR number found; skipping teardown."
           exit 0
         fi
 
         domain="${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${pr}.surge.sh"
+
         echo "Tearing down Surge preview: $domain"
         surge teardown "$domain"
     environment:
