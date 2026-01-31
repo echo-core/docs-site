@@ -48,7 +48,7 @@ steps:
     image: *surge_image
     when:
       - path: *site_path
-        event: pull_request
+        event: [pull_request, pull_request_closed]
     settings:
       path: 'site/build/'
       surge_token:
@@ -60,21 +60,32 @@ steps:
   - name: teardown-site-preview
     image: *surge_image
     when:
-      - path: *site_path
-        event: pull_request_closed
-    settings:
-      path: 'site/build/'
-      surge_token:
-        from_secret: SURGE_TOKEN
-      forge_repo_token:
-        from_secret: GITHUB_TOKEN_SURGE
-    failure: ignore
-
-  - name: debug-pr-close
-    image: alpine:3.19
-    when:
-      - event: [pull_request_closed]
+      - event: [push]
+        branch: main
     commands:
-      - echo "CI_PIPELINE_EVENT=$CI_PIPELINE_EVENT"
-      - echo "CI_COMMIT_PULL_REQUEST=$CI_COMMIT_PULL_REQUEST"
-      - env | sort
+      - |
+        set -eu
+
+        msg="${CI_COMMIT_MESSAGE:-}"
+        pr=""
+
+        # Merge commit style: "Merge pull request #16 from …"
+        pr="$(printf '%s\n' "$msg" | sed -nE 's/^Merge pull request #([0-9]+).*/\1/p' | head -n1)"
+
+        # Squash merge style: "Some title (#16)"
+        if [ -z "$pr" ]; then
+          pr="$(printf '%s\n' "$msg" | sed -nE 's/.*\(#([0-9]+)\).*/\1/p' | head -n1)"
+        fi
+
+        if [ -z "$pr" ]; then
+          echo "No PR number found in commit message; skipping preview teardown."
+          exit 0
+        fi
+
+        domain="${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${pr}.surge.sh"
+        echo "Tearing down Surge preview: $domain"
+        surge teardown "$domain"
+    environment:
+      SURGE_TOKEN:
+        from_secret: SURGE_TOKEN
+    failure: ignore
