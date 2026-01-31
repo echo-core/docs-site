@@ -26,19 +26,6 @@ steps:
       - corepack enable
       - pnpm build
 
-  - name: deploy-site-preview
-    image: *surge_image
-    when:
-      - path: *site_path
-        event: [pull_request, pull_request_closed]
-    settings:
-      path: 'site/build/'
-      surge_token:
-        from_secret: SURGE_TOKEN
-      forge_repo_token:
-        from_secret: GITHUB_TOKEN_SURGE
-    failure: ignore
-
   - name: deploy-site
     image: *node_image
     when:
@@ -57,13 +44,15 @@ steps:
       GIT_USER_NAME: crow-bot
       GIT_USER_EMAIL: deploy@crow.bot
 
-  - name: teardown-site-preview
+  - name: deploy-site-preview
     image: *surge_image
     when:
-      - event: [pull_request_merged, pull_request_closed]
-    commands:
-      - surge teardown ${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}.surge.sh
-    environment:
-      SURGE_TOKEN:
+      - path: *site_path
+        event: [pull_request, pull_request_closed]
+    settings:
+      path: 'site/build/'
+      surge_token:
         from_secret: SURGE_TOKEN
+      forge_repo_token:
+        from_secret: GITHUB_TOKEN_SURGE
     failure: ignore
