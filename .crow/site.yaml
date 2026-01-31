@@ -69,3 +69,12 @@ steps:
       forge_repo_token:
         from_secret: GITHUB_TOKEN_SURGE
     failure: ignore
+
+  - name: debug-pr-close
+    image: alpine:3.19
+    when:
+      - event: [pull_request_closed]
+    commands:
+      - echo "CI_PIPELINE_EVENT=$CI_PIPELINE_EVENT"
+      - echo "CI_COMMIT_PULL_REQUEST=$CI_COMMIT_PULL_REQUEST"
+      - env | sort
