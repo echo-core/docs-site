@@ -48,7 +48,20 @@ steps:
     image: *surge_image
     when:
       - path: *site_path
-        event: [pull_request, pull_request_closed]
+        event: pull_request
+    settings:
+      path: 'site/build/'
+      surge_token:
+        from_secret: SURGE_TOKEN
+      forge_repo_token:
+        from_secret: GITHUB_TOKEN_SURGE
+    failure: ignore
+
+  - name: teardown-site-preview
+    image: *surge_image
+    when:
+      - path: *site_path
+        event: pull_request_closed
     settings:
       path: 'site/build/'
       surge_token:
