@@ -1,0 +1,14 @@
+variables:
+  - &surge_image 'docker.io/woodpeckerci/plugin-surge-preview'
+
+steps:
+  - name: teardown-site-preview
+    image: *surge_image
+    when:
+      - event: [pull_request_merged, pull_request_closed]
+    commands:
+      - surge teardown ${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}.surge.sh
+    environment:
+      SURGE_TOKEN:
+        from_secret: SURGE_TOKEN
+    failure: ignore
