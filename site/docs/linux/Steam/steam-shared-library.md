@@ -23,6 +23,7 @@ mkdir -p /data/games
 cat /etc/fstab|grep /data
 /dev/mapper/luks-72289a87-7aed-4559-a334-794c3557834a /data          btrfs   subvol=/@data,defaults,noatime,compress=zstd,commit=120 0 0
 ```
+:::
 ## Add user(s) to the `games` group
 ```
 sudo usermod -a -G games <user>
