@@ -33,7 +33,7 @@ sudo usermod -a -G games <user>
 sudo chown root:games /data/games
 sudo setfacl -d -m g:games:rwx /data/games
 ```
-## For existing libraries, you can set your new default permissions recursively
+For existing libraries, you can set your new default permissions recursively
 ```
 getfacl -d /data/games|sudo setfacl -d -R --set-file=- /data/games
 ```
