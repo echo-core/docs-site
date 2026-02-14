@@ -7,6 +7,7 @@ variables:
   - path: &site_path
       - 'site/**'
       - '.crow/site.yaml'
+  - &site_work_path 'site'
 
 steps:
   - name: install-dependencies
@@ -14,7 +15,7 @@ steps:
     when:
       - path: *site_path
         event: [push, pull_request, manual]
-    directory: site/
+    directory: *site_work_path
     commands:
       - corepack enable
       - pnpm install --frozen-lockfile
@@ -24,7 +25,7 @@ steps:
     when:
       - path: *site_path
         event: [push, pull_request, manual]
-    directory: site/
+    directory: *site_work_path
     commands:
       - corepack enable
       - pnpm build
@@ -34,7 +35,7 @@ steps:
     when:
       - branch: main
         event: [push, manual]
-    directory: site/
+    directory: *site_work_path
     commands:
       - apk add git
       - corepack enable
