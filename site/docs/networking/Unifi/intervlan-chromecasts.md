@@ -102,8 +102,6 @@ If mirroring fails:
 - Check UDP return traffic
 - Verify IGMP group membership
 
----
-
 ## Common Issues
 
 | Symptom | Likely Cause |
@@ -120,3 +118,7 @@ Verified working on:
 - UniFi Layer 3 switches (IGMP snooping enabled)
 - Wireless Chromecast / Android TV
 - Inter‑VLAN routing with firewall enforcement
+
+## References
+- [UniFi Chromecast Best Practices](https://help.ui.com/hc/en-us/articles/4409866388887-Best-Practices-for-Chromecast-and-AirPlay)
+- [Google Cast Moderator Network Requirements](https://support.google.com/chrome/a/answer/12256492?hl=en)
