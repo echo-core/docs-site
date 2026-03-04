@@ -4,26 +4,19 @@ This document is a basic configuration guide for **Chromecast devices across VLA
 
 It was configured on a UniFi Dream Machine Pro (UDM Pro) with UniFi switches and access points.
 
----
-
 ## Network Model
 
 - **User VLAN**
   - Phones, laptops, tablets
-- **IoT / Media VLAN**
-  - Chromecast
-  - Chromecast Ultra
+- **IoT VLAN**
+  - Chromecast devices
   - Android TV / Google TV devices
 
-Traffic is routed at Layer 3 (UDM Pro), not bridged.
+## Required Ports and Protocols
 
----
+### Discovery (Multicast)
 
-## 1. Required Ports and Protocols
-
-### 1.1 Discovery (Multicast – MUST be forwarded)
-
-Chromecast uses multicast **only for discovery**, not for streaming.
+Chromecast uses multicast for discovery, not for streaming.
 
 | Protocol | Destination | Port | Purpose |
 |--------|------------|------|--------|
@@ -32,9 +25,7 @@ Chromecast uses multicast **only for discovery**, not for streaming.
 
 > mDNS is **link‑local** and does **not** cross VLANs unless explicitly forwarded.
 
----
-
-### 1.2 Control & Session Setup (Unicast)
+### Control & Session Setup (Unicast)
 
 These ports are required for pairing, control, and casting initiation:
 
@@ -44,84 +35,67 @@ These ports are required for pairing, control, and casting initiation:
 | TCP | 8009 |
 | TCP | 8443 |
 
----
+### Media & Mirroring (Unicast)
 
-### 1.3 Media & Mirroring (Unicast – Often Missed)
-
-These ports are required for **screen mirroring, tab casting, and local media**:
+These ports are required for screen mirroring, tab casting, and local media:
 
 | Protocol | Port(s) | Notes |
 |--------|---------|------|
-| UDP | **10008** | Required for mirroring (documented by Google, often omitted) |
+| UDP | 10008 | Required for mirroring |
 | UDP | 32768–61000 | Dynamic RTP/RTCP media streams |
 
 > **Important:**
 > Internet streaming (YouTube, Netflix, Spotify) may work *without* these ports.
 > Mirroring will **fail** unless they are allowed.
 
----
+## UniFi mDNS Configuration
 
-## 2. UniFi mDNS Configuration
+### Enable mDNS on
+- User VLAN
+- IoT VLAN
 
-### Enable mDNS on:
-- ✅ **User VLAN**
-- ✅ **IoT / Media VLAN**
-
-### Restrict mDNS services to ONLY:
-- ✅ Android TV Remote
-- ✅ DNS Service Discovery
-- ✅ Google Chromecast
-
-> Do **not** enable blanket mDNS / Bonjour forwarding.
+### Restrict mDNS services to ONLY
+- Android TV Remote
+- DNS Service Discovery
+- Google Chromecast
 
 This allows discovery while avoiding multicast noise and VLAN leakage.
 
----
+## IGMP Snooping Configuration
 
-## 3. IGMP Snooping Configuration (Critical for Stability)
+IGMP Snooping helps with overall connection stability.
 
-### Enable IGMP Snooping on:
-✅ **User VLAN**
+### Enable IGMP Snooping on
+- User VLAN
 
-### Recommended settings:
-- ✅ **Auto Querier Selection**
-- ✅ **Fast Leave**
-- ✅ **Auto / Allow Unknown Multicast**
+### Recommended settings
+- Auto Querier Selection
+- Fast Leave
+- Auto Unknown Traffic Handling
 
-### Why this works:
+### This helps
 - Prevents multicast flooding
 - Keeps group membership alive
 - Eliminates pixelation and delayed joins
-- Improves behavior for **wired Chromecasts** (Ultra, Android TV)
 
-### Notes:
+### Notes
 - IGMP snooping is **not a replacement** for mDNS forwarding
 - Do **not** rely on flooding
 
----
+## Firewall Rule Design
 
-## 4. Firewall Rule Design (Best Practice)
-
-### Recommended approach:
+### Recommended approach
 - Scope rules to **Chromecast / Android TV IPs**
+  - Use static dhcp reservations
 - Allow only required ports
 - Avoid “allow all UDP” rules
 
-### Why:
-- Chromecast uses **unsolicited UDP return traffic**
-- Stateful firewalls (UDM Pro) will drop this unless explicitly allowed
-- UDP 10008 is commonly logged as “blocked” during mirroring attempts
+## Validation Checklist
 
----
-
-## 5. Validation Checklist
-
-✅ Chromecast appears across VLANs
-✅ Casting starts immediately
-✅ Screen mirroring works
-✅ No pixelation or stutter
-✅ No multicast flooding
-✅ Firewall logs are clean
+- Chromecast appears across VLANs
+- Casting starts immediately
+- Screen mirroring works
+- No pixelation or stutter
 
 If mirroring fails:
 - Check **UDP 10008**
@@ -130,7 +104,7 @@ If mirroring fails:
 
 ---
 
-## 6. Common Failure Modes
+## Common Issues
 
 | Symptom | Likely Cause |
 |------|------------|
@@ -138,28 +112,11 @@ If mirroring fails:
 | Streaming works, mirroring fails | UDP 10008 blocked |
 | Random stutter / pixelation | IGMP snooping missing or mis‑placed |
 | Discovery intermittent | mDNS too broad or not forwarded |
-| Works on Wi‑Fi, not Ethernet | Missing IGMP snooping on user VLAN |
 
----
+## Final Notes
 
-## 7. Key Takeaways
-
-- Chromecast **does use multicast**, but **only for discovery**
-- Mirroring requires **UDP 10008**
-- mDNS must be **forwarded**, not flooded
-- IGMP snooping belongs on the **user VLAN**
-- A tight, scoped configuration is **more stable** than permissive rules
-
----
-
-## Status
-
-✅ Verified working on:
+Verified working on:
 - UniFi Dream Machine Pro
-- UniFi switches (IGMP snooping enabled)
-- Wired and wireless Chromecast / Android TV
+- UniFi Layer 3 switches (IGMP snooping enabled)
+- Wireless Chromecast / Android TV
 - Inter‑VLAN routing with firewall enforcement
-
-This configuration has been validated with **real firewall logs and live testing**, not assumptions.
-
----
