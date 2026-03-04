@@ -12,6 +12,13 @@ It was configured on a UniFi Dream Machine Pro (UDM Pro) with UniFi switches and
   - Chromecast devices
   - Android TV / Google TV devices
 
+:::warning
+- Chromecast and Android TV receivers do **not** support WPA2‑Enterprise or 802.1X
+- Use WPA2‑PSK Wi‑Fi or wired Ethernet without port authentication
+- Client isolation / AP isolation must be **disabled**
+- Receivers require outbound HTTPS (TCP 443) access to Google Cast services
+:::
+
 ## Required Ports and Protocols
 
 ### Discovery (Multicast)
