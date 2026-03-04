@@ -1,0 +1,8 @@
+{
+  "label": "Network Howtos",
+  "position": 4,
+  "link": {
+    "type": "generated-index",
+    "description": "Various articles on different network configs."
+  }
+}
