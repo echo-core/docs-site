@@ -49,7 +49,7 @@ These ports are required for screen mirroring, tab casting, and local media:
 | Protocol | Port(s) | Notes |
 |--------|---------|------|
 | UDP | 10008 | Required for mirroring |
-| UDP | 32768–61000 | Dynamic RTP/RTCP media streams |
+| UDP | 32000–61000 | Dynamic RTP/RTCP media streams |
 
 > **Important:**
 > Internet streaming (YouTube, Netflix, Spotify) may work *without* these ports.
