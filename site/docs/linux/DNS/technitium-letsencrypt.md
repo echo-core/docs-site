@@ -19,15 +19,17 @@ vim /etc/letsencrypt/renewal-hooks/deploy/pkcs12convert.sh
 ```
 #!/usr/bin/env sh
 
+DOMAIN=domain.com
+
 # generate pfx from certs
-openssl pkcs12 -export -out /etc/letsencrypt/live/domain.com/cert.pfx \
-        -inkey /etc/letsencrypt/live/domain.com/privkey.pem \
-        -in /etc/letsencrypt/live/domain.com/cert.pem \
-        -certfile /etc/letsencrypt/live/domain.com/chain.pem \
+openssl pkcs12 -export -out /etc/letsencrypt/live/${DOMAIN}/cert.pfx \
+        -inkey /etc/letsencrypt/live/${DOMAIN}/privkey.pem \
+        -in /etc/letsencrypt/live/${DOMAIN}/cert.pem \
+        -certfile /etc/letsencrypt/live/${DOMAIN}/chain.pem \
         -passout pass:changeme
 
 # restart technitium
-systemctl restart dns
+systemctl restart technitium
 
 echo "pkcs#12 generated!"
 ```
