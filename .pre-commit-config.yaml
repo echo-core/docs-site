@@ -7,17 +7,17 @@ fail_fast: true # Stops on first hook failure.
 
 repos:
 -   repo: https://gitlab.com/vojko.pribudic.foss/pre-commit-update
-    rev: 4fd4fcef9cf0a3c95b61c76de4a2b1a0bb0666fc  # frozen: v0.9.0
+    rev: 4fd4fcef9cf0a3c95b61c76de4a2b1a0bb0666fc # frozen: v0.9.0
     hooks:
     -   id: pre-commit-update
 -   repo: https://github.com/compilerla/conventional-pre-commit
-    rev: 91ab4bf57e58b32adf1a122681f6ebe164d081c8  # frozen: v4.4.0
+    rev: 91ab4bf57e58b32adf1a122681f6ebe164d081c8 # frozen: v4.4.0
     hooks:
     -   id: conventional-pre-commit
         stages: [commit-msg]
         args: [--verbose] # Failure output helps teach Conventional Commit requirements.
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # frozen: v6.0.0
     hooks:
     -   id: no-commit-to-branch
         args: [--branch, master, --branch, main] # Place protected branches here to save headache.
@@ -31,7 +31,7 @@ repos:
         args:
         -   --allow-multiple-documents
 -   repo: https://github.com/antonbabenko/pre-commit-terraform
-    rev: 05fd71a57a467ccf5598f7e836d3af4cf9225abb  # frozen: v1.108.0
+    rev: 05fd71a57a467ccf5598f7e836d3af4cf9225abb # frozen: v1.108.0
     hooks:
     -   id: terraform_fmt
     -   id: terraform_tflint
