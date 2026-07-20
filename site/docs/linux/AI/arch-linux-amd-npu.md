@@ -3,7 +3,7 @@
 This guide covers how to enable and accelerate Large Language Models (LLMs) using the **AMD XDNA2 NPU** (found in processors like the Ryzen AI 7 PRO 350). Because this hardware is cutting-edge, it requires specific driver patches to bridge the gap between the current Linux kernel and the hardware.
 
 ## Prerequisites
-*   A system running an Arch Linux derivative (e.g., CachyOS, EndeavourOS, Manjaro).
+*   A system running Arch Linux or derivative (e.g., CachyOS, EndeavourOS, Manjaro).
 *   A processor with an integrated AMD Ryzen AI NPU.
 
 ---
@@ -93,4 +93,4 @@ flm run gemma3:1b
 
 **How to Verify Success:**
 *   **CPU Usage:** Open `htop`. If your CPU usage remains low while text is being generated, the NPU is successfully handling the workload.
-*   **NPU Activity:** Run `sudo xrt-smi examine` during generation. You should see activity or utilization on the `RyzenAI-npu6` device.
+*   **NPU Activity:** Run `xrt-smi examine` during generation. You should see activity or utilization on the `RyzenAI-npu6` device.
