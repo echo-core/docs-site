@@ -1,96 +1,289 @@
 # Enabling Ryzen AI NPU for LLMs on Linux
 
-This guide covers how to enable and accelerate Large Language Models (LLMs) using the **AMD XDNA2 NPU** (found in processors like the Ryzen AI 7 PRO 350). Because this hardware is cutting-edge, it requires specific driver patches to bridge the gap between the current Linux kernel and the hardware.
+This guide covers how to enable and accelerate Large Language Models (LLMs) using the AMD XDNA2 NPU found in modern Ryzen AI processors such as the Ryzen AI 7 PRO 350.
+
+Recent Linux kernels now include AMD's in-tree `amdxdna` driver, which greatly simplifies setup. On modern Arch-based distributions and CachyOS, no DKMS driver installation or source patching is required.
 
 ## Prerequisites
-*   A system running Arch Linux or derivative (e.g., CachyOS, EndeavourOS, Manjaro).
-*   A processor with an integrated AMD Ryzen AI NPU.
+
+- CachyOS, Arch Linux, or another Arch-based distribution
+- Ryzen AI processor with integrated AMD NPU
+- Current `linux-firmware` package installed
 
 ---
 
-## Phase 1: Driver & Kernel Preparation
+## Phase 1: Verify Kernel Support
 
-The XDNA2 architecture requires a specific driver stack to be recognized by the OS. Because this hardware is very new, we must manually patch the driver to ensure compatibility with modern kernels.
+### 1. Verify the In-Kernel Driver
 
-### 1. Verify Firmware
-Ensure your system has the necessary firmware files located in `/usr/lib/firmware/amdnpu`. Most Arch-based distributions include these by default.
+Modern kernels ship the AMD XDNA driver directly.
 
-### 2. Install the AMD XDNA Driver (DKMS)
-Install the driver via the AUR:
+Check:
+
 ```bash
-paru -S amdxdna-dkms
+modinfo amdxdna | grep filename
 ```
 
-### 3. Bypass Kernel Restrictions
-The driver will fail to compile initially because it contains a hard-coded block against newer kernels. You must manually remove this restriction:
-*   Open `/var/lib/dkms/amdxdna/7.0/source/dkms.conf` in a text editor.
-*   Find the line `BUILD_EXCLUSIVE_KERNEL="^6\.(17|18|19)\."%` and change it to an empty string: `BUILD_EXCLUSIVE_KERNEL=""`.
+Expected output:
 
-### 4. Patch the Source Code (Kernel API Mismatch)
-Recent changes in the Linux Kernel's DRM subsystem have caused a conflict with the current driver source. You must perform "surgery" on the code to allow compilation:
-*   Open `/var/lib/dkms/amdxdna/7.0/source/aie2_ctx.c` in a text editor.
-*   Find line 556 (or search for `num_rqs`) and comment out the offending line:
-    ```c
-    // .num_rqs = DRM_SCHED_PRIORITY_COUNT,
-    ```
-*   Save and exit the editor.
-*   **Re-compile and install the patched driver:**
-    ```bash
-    sudo dkms install amdxdna/7.0 -k $(uname -r)
-    ```
-
-### 5. Verify Hardware Detection
-Confirm that the driver is active and the NPU is recognized by the XRT (Xilinx Runtime) subsystem:
-*   Check module load: `lsmod | grep amdxdna`
-*   Verify hardware detection: `sudo xrt-smi examine`
-    *   *Look for a device entry such as `RyzenAI-npu6`.*
-
----
-
-## Phase 2: The Inference Engine
-
-Once the driver is active, you need an engine to translate LLM operations into NPU instructions.
-
-### 6. Install FastFlowLM
-Install the inference engine from the official Arch repositories:
-```bash
-sudo pacman -S fastflowlm
+```text
+filename: /lib/modules/.../kernel/drivers/accel/amdxdna/amdxdna.ko.zst
 ```
-*This package provides the necessary binaries and XRT plugins to run models on the Ryzen AI hardware.*
+
+If the path points to:
+
+```text
+kernel/drivers/accel/amdxdna
+```
+
+you are using the kernel-integrated driver.
 
 ---
 
-## Phase 3: Permissions & Optimization
+### 2. Verify Firmware Availability
 
-To run models as a standard user without needing `sudo` every time, you must configure your system's resource limits.
+Confirm that AMD NPU firmware exists:
 
-### 7. Group Access
-Add your user to the `render` group to gain permission to access the NPU hardware nodes directly:
+```bash
+ls /usr/lib/firmware/amdnpu
+```
+
+You should see directories similar to:
+
+```text
+1502_00
+17f0_10
+17f0_11
+17f0_20
+```
+
+Verify that firmware is loading correctly:
+
+```bash
+sudo dmesg | grep -i amdxdna
+```
+
+Example:
+
+```text
+amdxdna 0000:c5:00.1: [drm] Load firmware amdnpu/17f0_10/npu_7.sbin
+[drm] Initialized amdxdna_accel_driver
+```
+
+---
+
+## Phase 2: Install Userspace Runtime
+
+The kernel driver provides hardware access, but userspace software still requires XRT.
+
+Install:
+
+```bash
+sudo pacman -S xrt xrt-plugin-amdxdna amdgpu_top
+```
+
+Verify installation:
+
+```bash
+paru -Q | grep -E 'xrt|xdna|amdgpu_top'
+```
+
+Example:
+
+```text
+xrt
+xrt-plugin-amdxdna
+amdgpu_top
+```
+
+---
+
+## Phase 3: Verify NPU Detection
+
+Use XRT to enumerate devices:
+
+```bash
+sudo xrt-smi examine
+```
+
+Expected output:
+
+```text
+Device(s) Present
+
+[0000:c5:00.1] NPU Krackan 1
+```
+
+You should also see:
+
+```text
+amdxdna Version
+NPU Firmware Version
+```
+
+listed in the report.
+
+If your NPU appears here, the kernel driver, firmware, and XRT stack are functioning correctly.
+
+---
+
+## Phase 4: User Permissions
+
+Add your user to the render group:
+
 ```bash
 sudo usermod -aG render $USER
 ```
-*(Note: You **must** log out and log back in for this change to take effect.)*
 
-### 8. Memory Locking (Memlock)
-LLMs require a large amount of RAM to be "locked" in place so they aren't swapped to the disk, which would significantly slow down inference. Create a limits configuration file:
-*   Create `/etc/security/limits.d/90-npu.conf`.
-*   Add these lines (replace `yourusername` with your actual username):
-    ```text
-    yourusername soft memlock unlimited
-    yourusername hard memlock unlimited
-    ```
+Log out and log back in.
+
+Verify:
+
+```bash
+groups
+```
+
+You should see:
+
+```text
+render
+```
+
+listed among your groups.
 
 ---
 
-## Phase 4: Execution
+## Phase 5: Install FastFlowLM
 
-### 9. Run the Model
-You can now run models directly using the `flm` command. To start with a lightweight model to verify performance, use the Gemma 3 1B model:
+Install FastFlowLM:
+
+```bash
+sudo pacman -S fastflowlm
+```
+
+Verify installation:
+
+```bash
+fastflowlm --version
+```
+
+---
+
+## Phase 6: Run a Model
+
+Test with a small model first:
 
 ```bash
 flm run gemma3:1b
 ```
 
-**How to Verify Success:**
-*   **CPU Usage:** Open `htop`. If your CPU usage remains low while text is being generated, the NPU is successfully handling the workload.
-*   **NPU Activity:** Run `xrt-smi examine` during generation. You should see activity or utilization on the `RyzenAI-npu6` device.
+While inference is running, monitor the NPU:
+
+```bash
+amdgpu_top
+```
+Scroll to the bottom to see what PID is using the NPU, as well as metrics. See example output below.
+```bash
+XDNA fdinfo
+Name  PID    Memory   NPU
+flm   17579  982 MiB  0 %
+```
+
+---
+
+## Troubleshooting
+
+### Verify Driver Status
+
+```bash
+lsmod | grep amdxdna
+```
+
+Expected:
+
+```text
+amdxdna
+```
+
+---
+
+### Verify NPU Detection
+
+```bash
+sudo xrt-smi examine
+```
+
+If the NPU appears in the device list, the hardware stack is functioning correctly.
+
+---
+
+### Validation Warnings
+
+Running:
+
+```bash
+sudo xrt-smi validate
+```
+
+may produce:
+
+```text
+No archive found, skipping test
+```
+
+or:
+
+```text
+No archive provided, skipping test
+```
+
+This usually indicates missing benchmark archives rather than a driver failure. If `xrt-smi examine` successfully detects your NPU, the driver stack is already operational.
+
+---
+
+## Deprecated Information
+
+The following steps are no longer required on current CachyOS kernels:
+
+❌ Installing:
+
+```bash
+paru -S amdxdna-dkms
+```
+
+❌ Editing:
+
+```text
+BUILD_EXCLUSIVE_KERNEL
+```
+
+inside DKMS source trees.
+
+❌ Patching:
+
+```c
+.num_rqs = DRM_SCHED_PRIORITY_COUNT
+```
+
+or other driver source files.
+
+Modern kernels already include the `amdxdna` driver, making these workarounds unnecessary and potentially harmful.
+
+---
+
+## TL;DR
+
+On modern CachyOS releases, Ryzen AI setup is now:
+
+```bash
+sudo pacman -S xrt xrt-plugin-amdxdna fastflowlm
+sudo usermod -aG render $USER
+```
+
+Reboot and verify:
+
+```bash
+sudo xrt-smi examine
+```
+
+If you see your NPU listed, you're ready to run models.
