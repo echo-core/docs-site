@@ -79,13 +79,13 @@ The kernel driver provides hardware access, but userspace software still require
 Install:
 
 ```bash
-sudo pacman -S xrt xrt-plugin-amdxdna
+sudo pacman -S xrt xrt-plugin-amdxdna amdgpu_top
 ```
 
 Verify installation:
 
 ```bash
-paru -Q | grep -E 'xrt|xdna'
+paru -Q | grep -E 'xrt|xdna|amdgpu_top'
 ```
 
 Example:
@@ -93,6 +93,7 @@ Example:
 ```text
 xrt
 xrt-plugin-amdxdna
+amdgpu_top
 ```
 
 ---
@@ -179,7 +180,13 @@ flm run gemma3:1b
 While inference is running, monitor the NPU:
 
 ```bash
-sudo xrt-smi examine
+amdgpu_top
+```
+Scroll to the bottom to see what PID is using the NPU, as well as metrics. See example output below.
+```bash
+XDNA fdinfo
+Name  PID    Memory   NPU
+flm   17579  982 MiB  0 %
 ```
 
 ---
