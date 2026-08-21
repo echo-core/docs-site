@@ -1,4 +1,4 @@
-# Enabling Ryzen AI NPU for LLMs on Linux (Updated 2026)
+# Enabling Ryzen AI NPU for LLMs on Linux
 
 This guide covers how to enable and accelerate Large Language Models (LLMs) using the AMD XDNA2 NPU found in modern Ryzen AI processors such as the Ryzen AI 7 PRO 350.
 
