@@ -85,7 +85,7 @@ sudo pacman -S xrt xrt-plugin-amdxdna amdgpu_top
 Verify installation:
 
 ```bash
-paru -Q | grep -E 'xrt|xdna|amdgpu_top'
+pacman -Q | grep -E 'xrt|xdna|amdgpu_top'
 ```
 
 Example:
@@ -248,7 +248,7 @@ The following steps are no longer required on current CachyOS kernels:
 ❌ Installing:
 
 ```bash
-paru -S amdxdna-dkms
+sudo pacman -S amdxdna-dkms
 ```
 
 ❌ Editing:
