@@ -12,9 +12,9 @@ Recent Linux kernels now include AMD's in-tree `amdxdna` driver, which greatly s
 
 ---
 
-# Phase 1: Verify Kernel Support
+## Phase 1: Verify Kernel Support
 
-## 1. Verify the In-Kernel Driver
+### 1. Verify the In-Kernel Driver
 
 Modern kernels ship the AMD XDNA driver directly.
 
@@ -40,7 +40,7 @@ you are using the kernel-integrated driver.
 
 ---
 
-## 2. Verify Firmware Availability
+### 2. Verify Firmware Availability
 
 Confirm that AMD NPU firmware exists:
 
@@ -72,7 +72,7 @@ amdxdna 0000:c5:00.1: [drm] Load firmware amdnpu/17f0_10/npu_7.sbin
 
 ---
 
-# Phase 2: Install Userspace Runtime
+## Phase 2: Install Userspace Runtime
 
 The kernel driver provides hardware access, but userspace software still requires XRT.
 
@@ -98,7 +98,7 @@ amdgpu_top
 
 ---
 
-# Phase 3: Verify NPU Detection
+## Phase 3: Verify NPU Detection
 
 Use XRT to enumerate devices:
 
@@ -127,7 +127,7 @@ If your NPU appears here, the kernel driver, firmware, and XRT stack are functio
 
 ---
 
-# Phase 4: User Permissions
+## Phase 4: User Permissions
 
 Add your user to the render group:
 
@@ -153,7 +153,7 @@ listed among your groups.
 
 ---
 
-# Phase 5: Install FastFlowLM
+## Phase 5: Install FastFlowLM
 
 Install FastFlowLM:
 
@@ -169,7 +169,7 @@ fastflowlm --version
 
 ---
 
-# Phase 6: Run a Model
+## Phase 6: Run a Model
 
 Test with a small model first:
 
@@ -191,9 +191,9 @@ flm   17579  982 MiB  0 %
 
 ---
 
-# Troubleshooting
+## Troubleshooting
 
-## Verify Driver Status
+### Verify Driver Status
 
 ```bash
 lsmod | grep amdxdna
@@ -207,7 +207,7 @@ amdxdna
 
 ---
 
-## Verify NPU Detection
+### Verify NPU Detection
 
 ```bash
 sudo xrt-smi examine
@@ -217,7 +217,7 @@ If the NPU appears in the device list, the hardware stack is functioning correct
 
 ---
 
-## Validation Warnings
+### Validation Warnings
 
 Running:
 
@@ -241,7 +241,7 @@ This usually indicates missing benchmark archives rather than a driver failure. 
 
 ---
 
-# Deprecated Information
+## Deprecated Information
 
 The following steps are no longer required on current CachyOS kernels:
 
@@ -271,7 +271,7 @@ Modern kernels already include the `amdxdna` driver, making these workarounds un
 
 ---
 
-# TL;DR
+## TL;DR
 
 On modern CachyOS releases, Ryzen AI setup is now:
 
