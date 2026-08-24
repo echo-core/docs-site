@@ -28,7 +28,7 @@ Keep the original SQLite files until the PostgreSQL deployment has been fully te
 
 ## 2. PostgreSQL Compose configuration
 
-PostgreSQL 18 uses `/var/lib/postgresql` as the persistent volume mount.
+PostgreSQL 18 uses `/var/lib/postgresql` as the persistent volume mount. Add the following to your existing Netbird `docker-compose.yaml`.
 
 ```yaml
 services:
@@ -50,8 +50,13 @@ services:
       interval: 30s
       retries: 5
       timeout: 5s
+```
 
+Add the following `depends_on` directive to your `netbird-server` to make sure postgres is started and healthy before the server.
+
+```
   netbird-server:
+  ...
     depends_on:
       netbird-db:
         condition: service_healthy
@@ -82,8 +87,6 @@ docker compose exec netbird-db psql -U admin -d postgres \
 docker compose exec netbird-db psql -U admin -d postgres \
   -c "CREATE DATABASE netbird_events OWNER netbird;"
 ```
-
-Create a separate activity database too if that is how your configuration is organized.
 
 ## 4. Create the custom pgloader JSON transform
 
@@ -139,7 +142,7 @@ Run the migration:
 pgloader -l ./transforms.lisp ./sqlite.load
 ```
 
-:::note CAST syntax
+:::note[CAST syntax]
 Separate CAST rules with commas, but do not put a trailing comma after the final rule.
 :::
 
@@ -157,7 +160,7 @@ WHERE t.service_id IS NOT NULL
 "
 ```
 
-If the returned targets are confirmed obsolete, remove them from the migration copy:
+If the returned targets are confirmed obsolete, remove them from the migration copy. Modify the `id`'s to the one's matching your install:
 
 ```bash
 sqlite3 /root/compose/netbird/backup/store.db "
@@ -207,10 +210,18 @@ pgloader ./auth-sqlite.load
 
 Migrate the activity database into the PostgreSQL database selected for activity events:
 
+Create the `activity-sqlite.load`:
+```lisp
+LOAD DATABASE
+     FROM sqlite:///root/compose/netbird/backup/events.db
+     INTO postgresql://netbird:REPLACE_PASSWORD@localhost:5432/netbird_events
+
+WITH include drop, create tables, create indexes, reset sequences
+;
+```
+
 ```bash
-pgloader --type sqlite \
-  /root/compose/netbird/backup/events.db \
-  "postgresql://netbird:REPLACE_PASSWORD@localhost:5432/netbird_events"
+pgloader ./activity-sqlite.load
 ```
 
 ## 9. Preserve the NetBird encryption key
@@ -275,7 +286,7 @@ docker compose logs --tail=200 netbird-server
 Confirm the store engines:
 
 ```bash
-docker compose logs netbird-server | grep -i store
+docker compose logs netbird-server | grep store
 ```
 
 Expected messages include:
@@ -295,20 +306,9 @@ Also verify:
 
 ## 12. Archive the legacy SQLite files
 
-After all three PostgreSQL stores and authentication have been verified:
+Retain the archived files in `./backup/` until tested PostgreSQL backups are available.
 
-```bash
-docker compose stop netbird-server
-mkdir -p backup/legacy-sqlite
-mv data/store.db data/store.db-journal \
-   data/idp.db data/events.db \
-   backup/legacy-sqlite/
-docker compose start netbird-server
-```
-
-Retain the archived files until tested PostgreSQL backups are available.
-
-Keep the GeoLite and Geonames data files in place:
+Keep the GeoLite and Geonames data files in place in the `./data/` directory:
 
 ```text
 GeoLite2-City_*.mmdb
