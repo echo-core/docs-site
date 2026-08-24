@@ -1,0 +1,325 @@
+---
+title: Migrate NetBird SQLite Databases to PostgreSQL
+description: Migrate NetBird store.db, idp.db, and events.db to PostgreSQL with pgloader.
+sidebar_position: 1
+---
+
+# Migrate NetBird SQLite Databases to PostgreSQL
+
+This guide documents a working migration of NetBird's SQLite databases to PostgreSQL 18:
+
+- `store.db` -> `netbird_store`
+- `idp.db` -> `netbird_auth`
+- `events.db` -> `netbird_events`
+
+:::danger[Back up first]
+Stop NetBird and preserve the entire data directory, configuration, and encryption key before modifying either database.
+:::
+
+## 1. Stop NetBird and create a backup
+
+```bash
+docker compose stop netbird-server
+mkdir -p backup
+cp -a data/. backup/
+```
+
+Keep the original SQLite files until the PostgreSQL deployment has been fully tested.
+
+## 2. PostgreSQL Compose configuration
+
+PostgreSQL 18 uses `/var/lib/postgresql` as the persistent volume mount. Add the following to your existing Netbird `docker-compose.yaml`.
+
+```yaml
+services:
+  netbird-db:
+    image: postgres:18
+    container_name: netbird-db
+    restart: unless-stopped
+    networks: [netbird]
+    ports:
+      - "<netbird-vps-ip>:5432:5432"
+      - "127.0.0.1:5432:5432"
+    env_file:
+      - ./postgres.env
+    volumes:
+      - ./postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      start_period: 20s
+      interval: 10s
+      retries: 5
+      timeout: 5s
+```
+
+Add the following `depends_on` directive to your `netbird-server` to make sure postgres is started and healthy before the server.
+
+```
+  netbird-server:
+  ...
+    depends_on:
+      netbird-db:
+        condition: service_healthy
+```
+
+Example `postgres.env`:
+
+```dotenv
+POSTGRES_USER=admin
+POSTGRES_PASSWORD=REPLACE_WITH_A_STRONG_PASSWORD
+POSTGRES_DB=postgres
+```
+
+The `start_period` is a grace period during startup. The `interval` controls how often Docker runs the healthcheck.
+
+## 3. Create the PostgreSQL databases
+
+```bash
+docker compose exec netbird-db psql -U admin -d postgres \
+  -c "CREATE ROLE netbird LOGIN PASSWORD 'REPLACE_WITH_A_STRONG_PASSWORD';"
+
+docker compose exec netbird-db psql -U admin -d postgres \
+  -c "CREATE DATABASE netbird_store OWNER netbird;"
+
+docker compose exec netbird-db psql -U admin -d postgres \
+  -c "CREATE DATABASE netbird_auth OWNER netbird;"
+
+docker compose exec netbird-db psql -U admin -d postgres \
+  -c "CREATE DATABASE netbird_events OWNER netbird;"
+```
+
+## 4. Create the custom pgloader JSON transform
+
+Some NetBird JSON fields are SQLite BLOBs. Without a transform, pgloader emits a Common Lisp byte-vector representation such as `#(123 34 ...)`, which PostgreSQL rejects as JSON.
+
+Create `transforms.lisp`:
+
+```lisp
+(in-package #:pgloader.transforms)
+
+(defun byte-vector-to-json (value)
+  (when value
+    (sb-ext:octets-to-string value :external-format :utf-8)))
+```
+
+Load this file with pgloader's `-l` / `--load-lisp-file` option.
+
+## 5. Migrate `store.db`
+
+Create `sqlite.load`:
+
+```lisp
+LOAD DATABASE
+    FROM sqlite:///root/compose/netbird/backup/store.db
+    INTO postgresql://netbird:REPLACE_PASSWORD@localhost:5432/netbird_store
+
+WITH include drop, create tables, create indexes, reset sequences
+
+CAST
+    column accounts.is_domain_primary_account                    to boolean,
+    column accounts.settings_peer_login_expiration_enabled       to boolean,
+    column accounts.settings_peer_inactivity_expiration_enabled  to boolean,
+    column accounts.settings_regular_users_view_blocked          to boolean,
+    column accounts.settings_groups_propagation_enabled          to boolean,
+    column accounts.settings_jwt_groups_enabled                  to boolean,
+    column accounts.settings_routing_peer_dns_resolution_enabled to boolean,
+    column accounts.settings_extra_peer_approval_enabled         to boolean,
+    column accounts.settings_extra_user_approval_required        to boolean,
+    column accounts.settings_lazy_connection_enabled             to boolean,
+    column accounts.settings_peer_expose_enabled                 to boolean,
+    column accounts.settings_auto_update_always                  to boolean,
+    column accounts.settings_metrics_push_enabled                to boolean,
+    column accounts.settings_agent_network_only                  to boolean,
+    column accounts.settings_local_mfa_enabled                   to boolean,
+    column jobs.workload_parameters                              to jsonb using byte-vector-to-json,
+    column jobs.workload_result                                  to jsonb using byte-vector-to-json
+;
+```
+
+Run the migration:
+
+```bash
+pgloader -l ./transforms.lisp ./sqlite.load
+```
+
+:::note[CAST syntax]
+Separate CAST rules with commas, but do not put a trailing comma after the final rule.
+:::
+
+## 6. Resolve orphaned target records
+
+If PostgreSQL refuses to create `targets_service_id_fkey`, locate orphaned rows:
+
+```bash
+sqlite3 /root/compose/netbird/backup/store.db "
+SELECT t.id, t.service_id
+FROM targets t
+LEFT JOIN services s ON s.id = t.service_id
+WHERE t.service_id IS NOT NULL
+  AND s.id IS NULL;
+"
+```
+
+If the returned targets are confirmed obsolete, remove them from the migration copy. Modify the `id`'s to the one's matching your install:
+
+```bash
+sqlite3 /root/compose/netbird/backup/store.db "
+DELETE FROM targets
+WHERE id IN (15,16,26,27);
+"
+```
+
+Run the orphan query again. It should return no rows before rerunning pgloader.
+
+:::warning
+Do not delete orphaned records blindly. Restore missing `services` rows or update the references if the targets are still required.
+:::
+
+## 7. Migrate `idp.db`
+
+Create `auth-sqlite.load`:
+
+```lisp
+LOAD DATABASE
+    FROM sqlite:///root/compose/netbird/backup/idp.db
+    INTO postgresql://netbird:REPLACE_PASSWORD@localhost:5432/netbird_auth
+
+WITH include drop, create tables, create indexes, reset sequences
+
+CAST
+    type blob                                       to bytea drop default using byte-vector-to-bytea,
+    column client.public                            to boolean,
+    column auth_request.force_approval_prompt       to boolean,
+    column auth_request.logged_in                   to boolean,
+    column auth_request.claims_email_verified       to boolean,
+    column auth_code.claims_email_verified          to boolean,
+    column refresh_token.claims_email_verified      to boolean,
+    column auth_request.mfa_validated               to boolean,
+    column password.email_verified                  to boolean,
+    column user_identity.claims_email_verified      to boolean
+;
+```
+
+Run:
+
+```bash
+pgloader ./auth-sqlite.load
+```
+
+## 8. Migrate `events.db`
+
+Migrate the activity database into the PostgreSQL database selected for activity events:
+
+Create the `activity-sqlite.load`:
+```lisp
+LOAD DATABASE
+     FROM sqlite:///root/compose/netbird/backup/events.db
+     INTO postgresql://netbird:REPLACE_PASSWORD@localhost:5432/netbird_events
+
+WITH include drop, create tables, create indexes, reset sequences
+;
+```
+
+```bash
+pgloader ./activity-sqlite.load
+```
+
+## 9. Preserve the NetBird encryption key
+
+Reuse the exact encryption key from the previous NetBird configuration. pgloader copies encrypted values but does not decrypt or re-encrypt them.
+
+For the combined setup:
+
+```yaml
+server:
+  store:
+    encryptionKey: "REPLACE_WITH_EXISTING_KEY"
+```
+
+Do not replace the old key unless it is irretrievable. A different key can prevent NetBird from reading previously encrypted fields.
+
+## 10. Configure NetBird for PostgreSQL
+
+Example management-store configuration:
+
+```yaml
+server:
+  store:
+    engine: postgres
+    dsn: "host=netbird-db port=5432 user=netbird password=REPLACE_PASSWORD dbname=netbird_store sslmode=disable"
+```
+
+Example auth-store configuration:
+
+```yaml
+server:
+  authStore:
+    engine: postgres
+    dsn: "host=netbird-db port=5432 user=netbird password=REPLACE_PASSWORD dbname=netbird_auth sslmode=disable"
+```
+
+Example auth-store configuration:
+
+```yaml
+server:
+  activityStore:
+    engine: postgres
+    dsn: "host=netbird-db port=5432 user=netbird password=REPLACE_PASSWORD dbname=netbird_events sslmode=disable"
+```
+
+## 11. Verify the migration
+
+A successful pgloader summary should show:
+
+- Zero table-copy errors
+- `Create Foreign Keys` with zero errors
+- Successful import of the `jobs` row
+- The expected number of valid `targets`
+
+Start NetBird:
+
+```bash
+docker compose start netbird-server
+docker compose logs --tail=200 netbird-server
+```
+
+Confirm the store engines:
+
+```bash
+docker compose logs netbird-server | grep store
+```
+
+Expected messages include:
+
+```text
+using Postgres store engine
+using postgres as activity event store engine
+```
+
+Also verify:
+
+1. Dashboard login works.
+2. Existing users and peers appear.
+3. Audit events load correctly.
+4. No encryption-key warning appears.
+5. `docker compose ps` reports `netbird-db` as healthy.
+
+## 12. Archive the legacy SQLite files
+
+Retain the archived files in `./backup/` until tested PostgreSQL backups are available.
+
+Keep the GeoLite and Geonames data files in place in the `./data/` directory:
+
+```text
+GeoLite2-City_*.mmdb
+geonames_*.db
+```
+
+## References
+
+- [NetBird: Migrate from SQLite to PostgreSQL](https://docs.netbird.io/selfhosted/maintenance/scaling/migrate-sqlite-to-postgresql)
+- [NetBird: Management PostgreSQL store](https://docs.netbird.io/selfhosted/maintenance/postgres-store)
+- [NetBird: Activity Events PostgreSQL store](https://docs.netbird.io/selfhosted/maintenance/activity-postgres-store)
+- [NetBird: Back up a self-hosted installation](https://docs.netbird.io/selfhosted/maintenance/backup)
+- [Docker: Control startup and shutdown order in Compose](https://docs.docker.com/compose/how-tos/startup-order/)
+- [PostgreSQL: DROP DATABASE](https://www.postgresql.org/docs/current/sql-dropdatabase.html)
