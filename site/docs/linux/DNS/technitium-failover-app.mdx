@@ -1,0 +1,127 @@
+---
+title: Caddy Failover with Technitium DNS
+description: Configure DNS-based failover for Caddy instances using the Technitium Failover App.
+---
+
+# Caddy Failover with Technitium DNS
+
+This guide describes how to configure DNS-based failover for multiple Caddy instances using the Technitium Failover App. This approach provides redundancy without requiring a dedicated load balancer, allowing DNS to automatically switch traffic to a secondary Caddy instance when the primary instance becomes unavailable.
+
+## Overview
+
+The configuration consists of:
+
+- The Technitium Failover App monitoring Caddy health endpoints.
+- Caddy exposing a dedicated health check endpoint.
+- A Technitium APP record managing primary and secondary Caddy instances.
+- Application CNAME records pointing to the failover-enabled DNS record.
+
+When the primary Caddy server becomes unhealthy, the Failover App automatically returns the secondary IP address in DNS responses.
+
+## Prerequisites
+
+- Technitium DNS Server with the Failover App installed
+- Two or more Caddy instances
+- A domain managed by Technitium DNS
+- Public or internal connectivity between Technitium and the Caddy health endpoint
+
+## Step 1: Install the Failover App
+
+Install the **Failover App** from the Technitium DNS Server App Store.
+
+Once installed, navigate to the Failover App configuration page.
+
+## Step 2: Create a Custom Health Check
+
+Create a health check that validates the availability of your Caddy instance.
+
+```json
+{
+  "name": "caddy",
+  "type": "https",
+  "interval": 10,
+  "retries": 2,
+  "timeout": 3,
+  "url": "https://domain.com/caddy-health",
+  "emailAlert": "default",
+  "webHook": "default"
+}
+```
+
+### Configuration Notes
+
+- `interval`: Checks run every 10 seconds.
+- `retries`: A host is marked unhealthy after 2 failed checks.
+- `timeout`: Requests timeout after 3 seconds.
+- `url`: Points to the custom Caddy health endpoint.
+- `emailAlert` and `webHook`: Use the default notification settings.
+
+## Step 3: Configure a Caddy Health Endpoint
+
+Add a dedicated handler to your Caddy configuration that always returns an HTTP 200 response.
+
+```caddy
+handle /caddy-health {
+    respond "OK" 200
+}
+```
+
+This endpoint is used exclusively by the Technitium health check.
+
+## Step 4: Create a Failover APP Record
+
+Create a custom APP record that references the health check and defines primary and secondary Caddy instances.
+
+Example record for `uc.infra.domain.com`:
+
+```json
+{
+  "primary": ["192.168.0.21"],
+  "secondary": ["192.168.0.22"],
+  "healthCheck": "caddy",
+  "allowTxtStatus": true
+}
+```
+
+### Configuration Notes
+
+- `primary`: Preferred Caddy instance.
+- `secondary`: Failover Caddy instance.
+- `healthCheck`: References the custom health check created earlier.
+- `allowTxtStatus`: Enables querying failover status through TXT records.
+
+Set the DNS record **TTL** to **10 seconds** to reduce failover detection time for DNS clients.
+
+## Step 5: Point Application Records to the Failover Record
+
+Configure your application CNAME records to point to the failover-enabled record.
+
+Example:
+
+```dns
+app1.domain.com  CNAME  uc.infra.domain.com
+app2.domain.com  CNAME  uc.infra.domain.com
+app3.domain.com  CNAME  uc.infra.domain.com
+```
+
+All application traffic will resolve through the Failover App, which automatically returns either the primary or secondary Caddy instance depending on health status.
+
+## Verifying Failover
+
+You can verify the current failover state by querying the APP record TXT response when `allowTxtStatus` is enabled.
+
+```bash
+dig TXT uc.infra.domain.com
+```
+
+You should receive status information indicating which backend is currently active. Example below:
+
+```bash
+;; ANSWER SECTION:
+uc.infra.domain.com.     30      IN      TXT     "app=failover; addressType=Primary; address=192.168.0.21; healthCheck=caddy; healthStatus=Healthy;"
+uc.infra.domain.com.     30      IN      TXT     "app=failover; addressType=Secondary; address=192.168.0.22; healthCheck=caddy; healthStatus=Healthy;"
+```
+
+## Result
+
+This setup provides lightweight DNS-based redundancy for Caddy instances without deploying traditional load balancers. The Technitium Failover App continuously monitors Caddy health and automatically redirects DNS responses to a secondary instance when the primary becomes unavailable.
