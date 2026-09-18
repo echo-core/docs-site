@@ -11,7 +11,6 @@ This guide documents a working UFW-Docker configuration for a self-hosted NetBir
 - NetBird
 - NetBird Proxy
 - Traefik
-- PostgreSQL
 - UFW
 - UFW-Docker
 
@@ -21,7 +20,6 @@ The goal is to:
 - Maintain NetBird Proxy SSO functionality.
 - Keep required NetBird services publicly accessible.
 - Allow Docker services to be managed through UFW-Docker.
-- Avoid service dependencies on overlay-network IPs.
 
 ---
 
@@ -30,18 +28,18 @@ The goal is to:
 A working deployment uses both:
 
 ```text
-UFW
+ufw
 ```
 
 for host firewall rules and:
 
 ```text
-UFW-Docker
+ufw-docker
 ```
 
 for Docker forwarding integration.
 
-The following ports must remain available on the host:
+The following ports must remain available on the host [SSH is optional]:
 
 | Port | Purpose |
 |--------|--------|
@@ -141,32 +139,10 @@ ufw-docker status
 Example:
 
 ```text
-ALLOW FWD 172.30.0.x:80
-ALLOW FWD 172.30.0.x:443
-ALLOW FWD 172.30.0.x:3478/udp
+[ 6] 172.30.0.10 80/tcp         ALLOW FWD   Anywhere                   # allow netbird-traefik 80/tcp netbird_netbird
+[ 7] 172.30.0.10 443/tcp        ALLOW FWD   Anywhere                   # allow netbird-traefik 443/tcp netbird_netbird
+[ 8] 172.30.0.3 3478/udp        ALLOW FWD   Anywhere                   # allow netbird-server 3478/udp netbird_netbird
 ```
-
----
-
-# PostgreSQL Configuration
-
-Avoid binding PostgreSQL directly to an overlay-network IP.
-
-Do **not** use:
-
-```yaml
-ports:
-  - "100.x.x.x:5432:5432"
-```
-
-Instead use:
-
-```yaml
-ports:
-  - "5432:5432"
-```
-
-This removes startup dependencies on the overlay network and allows PostgreSQL to start normally during boot.
 
 ---
 
@@ -177,45 +153,16 @@ This removes startup dependencies on the overlay network and allows PostgreSQL t
 From an external system:
 
 ```bash
-nmap <public-ip>
+nmap -Pn <public-ip>
 ```
 
 Expected:
 
 ```text
-22/tcp
-80/tcp
-443/tcp
-```
-
----
-
-## Verify PostgreSQL Is Not Public
-
-```bash
-nc -zv <public-ip> 5432
-```
-
-Expected:
-
-```text
-Connection timed out
-```
-
----
-
-## Verify Overlay Connectivity
-
-From a NetBird peer:
-
-```bash
-psql -h <overlay-ip> -U <user> <database>
-```
-
-Expected:
-
-```text
-Connection successful
+PORT    STATE SERVICE
+22/tcp  open  ssh
+80/tcp  open  http
+443/tcp open  https
 ```
 
 ---
@@ -244,9 +191,23 @@ Application Access
 
 ---
 
-# Troubleshooting
+## Troubleshooting & Maintenance
 
-## Symptom
+---
+
+### Docker Upgrade Connectivity Issues
+If container accessibility issues reappear after a Docker upgrade, it may be due to a race condition where firewall rules are dropped during the update process.
+
+**Prevention:**
+To prevent this, **do not** perform Docker upgrades over the Netbird tunnel. Instead, perform the upgrade:
+1. Directly from the GreenCloud VPS console, or
+2. Via `tmux` or `screen`.
+3. Directly via SSH using the VPS’s public IP address.
+
+**Resolution:**
+If rules are found to be missing after an upgrade, re-apply them using the `ufw-docker allow` commands listed in Section 3.
+
+### SSO stops working
 
 After installing UFW-Docker and removing host-level firewall rules, NetBird Proxy SSO stops working.
 
@@ -266,7 +227,7 @@ Users may also experience endless redirects or failed application authentication
 
 ---
 
-## Cause
+#### Cause
 
 NetBird Proxy uses the public OIDC authority URL configured by NetBird.
 
@@ -303,7 +264,7 @@ Because the authentication flow still relies on the public endpoint, host-level 
 
 ---
 
-## Resolution
+#### Resolution
 
 Re-add the required UFW rules:
 
@@ -320,7 +281,7 @@ In testing, restoring these rules immediately restored SSO functionality.
 
 ---
 
-## Diagnostic Commands
+## Common Diagnostic Commands
 
 ### Check UFW Rules
 
