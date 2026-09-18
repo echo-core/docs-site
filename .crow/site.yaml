@@ -10,6 +10,13 @@ variables:
   - &site_work_path 'site'
 
 steps:
+  - name: prek-check
+    image: *node_image
+    commands:
+      - apk add uv git
+      - uv tool install prek
+      - SKIP=no-commit-to-branch /root/.local/bin/prek run -a --show-diff-on-failure
+
   - name: install-dependencies
     image: *node_image
     when:
