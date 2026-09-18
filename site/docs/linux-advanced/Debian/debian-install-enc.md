@@ -9,15 +9,15 @@ I personally use Debin Sid for this, since the purpose was to roll newer version
 
 At the time of this writing, Debian Trixie is using GRUB 2.12, which is compatible with luks2, but it only supports the `pbkdf2` algorithm. This installation will do the following:
 
-* Install Debian using the Expert Install option.
-* Create an EFI partition.
-* Create a luks2 container.
-* Create BTRFS root parititon.
-* Downgrade pbkdf to `pbkdf2`.
-* Install Debian base system.
-* Install GRUB Boot Loader.
-* Install Snapper and associated tools to make managing snapshots easy.
-* Create a base installation snapshot that can be reverted to at anytime.
+- Install Debian using the Expert Install option.
+- Create an EFI partition.
+- Create a luks2 container.
+- Create BTRFS root parititon.
+- Downgrade pbkdf to `pbkdf2`.
+- Install Debian base system.
+- Install GRUB Boot Loader.
+- Install Snapper and associated tools to make managing snapshots easy.
+- Create a base installation snapshot that can be reverted to at anytime.
 
 In addition, the BTRFS subvolumes created ensure that rolling back actually works while balancing ignoring cruft from system snapshots and will not touch a user's `/home` folder. This makes it safe to rollback only the system and not worry about data loss in a user's home folder.
 
@@ -36,12 +36,12 @@ You can grab the latest unstable Debian `mini` iso from **_[here](https://d-i.de
 1. Boot iso and select the `Advanced Options... > Expert install` option.
 
 2. Run through the install then run the `Partition disks` part of the install in this order.
-    * Use gpt partition type
-    * Create Partitions
-      * EFI - 512MB
-      * Create Encrypted Container
-        * Set your password to unlock your luks2 volume. Don't lose this, you'll need it to unlock your computer at every boot moving forward.
-      * Create a root BTRFS partition.
+    - Use gpt partition type
+    - Create Partitions
+      - EFI - 512MB
+      - Create Encrypted Container
+        - Set your password to unlock your luks2 volume. Don't lose this, you'll need it to unlock your computer at every boot moving forward.
+      - Create a root BTRFS partition.
 
 3. Go to the console: `ctrl+alt+f3`.
 
@@ -57,6 +57,7 @@ umount /target
 ```bash
 cryptsetup luksConvertKey --pbkdf pbkdf2 /dev/vda2
 ```
+
 :::tip
 This can be upgraded later when GRUB supports `argon2id` and will **_NOT_** require wiping your drive to do this. This will make the installation process much easier when that is implemented as we will only need to focus on the BTRFS subvolumes and not worry about this steps for the GRUB Boot Loader.
 :::
@@ -68,10 +69,13 @@ mount /dev/mapper/vda2_crypt /mnt
 ```
 
 7. Configure BTRFS subvolumes.
+
 ```bash
 cd /mnt
 ```
+
 Create optimized subvolumes.
+
 ```bash
 btrfs sub cr @
 btrfs sub cr @grub
@@ -108,7 +112,9 @@ mkdir -p /target/var/lib/libvirt/images
 mkdir -p /target/var/log
 mkdir -p /target/var/tmp
 ```
+
 Disable CoW (Copy on Write) for libvirt:
+
 ```bash
 chattr +C /target/var/lib/libvirt/images
 ```
@@ -140,6 +146,7 @@ cp /mnt/@rootfs/etc/* /target/etc/
 ```bash
 nano /target/etc/fstab
 ```
+
 ```bash
 /dev/mapper/vda2_crypt /               btrfs   defaults,noatime,compress=zstd,subvol=@ 0       0
 /dev/mapper/vda2_crypt /.snapshots               btrfs   defaults,noatime,compress=zstd,commit=120,subvol=@snapshots 0       0
@@ -162,9 +169,9 @@ umount /mnt
 ```
 
 14. Continue installation: `ctrl+alt+f1`.
-      * Install base system
-      * Configure package manager
-      * Select and install software - standard system utilities only
+      - Install base system
+      - Configure package manager
+      - Select and install software - standard system utilities only
 
 15. Install the GRUB boot loader: when grub-install fails go back to the console with `ctrl+alt+f3`.
 
@@ -190,7 +197,9 @@ mkdir -m0700 /etc/keys
 cryptsetup luksAddKey /dev/vda2 /etc/keys/root.key
 cryptsetup luksDump /dev/vda2 | grep "^Keyslots" -A16
 ```
+
 Output:
+
 ```bash
 Keyslots:
   0: luks2
@@ -290,8 +299,10 @@ sudo systemctl disable snapper-boot.timer
 ```bash
 sudo nano /etc/snapper/configs/root
 ```
+
 Recommended configuration for `root`, but can be tweaked to your liking.
-```
+
+```text
 SUBVOLUME="/"
 FSTYPE="btrfs"
 ALLOW_GROUPS="sudo"
@@ -359,7 +370,9 @@ sudo cp 80snapper /etc/apt/apt.conf.d/
 ```bash
 sudo nano /etc/apt/apt.conf.d/80snapper
 ```
+
 Modify the script to look like below.
+
 ```bash
 # https://gist.github.com/imthenachoman/f722f6d08dfb404fed2a3b2d83263118
 # https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=770938
@@ -373,11 +386,13 @@ DPkg::Post-Invoke { "/usr/local/sbin/dpkg-pre-post-snapper post"; };
 ```bash
 sudo snapper -c root create -d "base-install" -u important=yes
 ```
+
 :::tip
 Keep this snapshot around as you can use it to rollback to the base installation at anytime.
 :::
 
 Old output:
+
 ```bash
   # | Type   | Pre # | Date | User | Cleanup | Description  | Userdata
 ----+--------+-------+------+------+---------+--------------+---------------
@@ -388,6 +403,7 @@ Old output:
 ```
 
 New improved output with more info in the `Description` table:
+
 ```bash
   # | Type   | Pre # | Date | User | Cleanup | Description                | Userdata
 ----+--------+-------+------+------+---------+----------------------------+---------------
@@ -396,6 +412,7 @@ New improved output with more info in the `Description` table:
  2  | pre    |       | ...  | root | number  | apt install btrfs-compsize |
  3  | post   |     2 | ...  | root | number  | apt install btrfs-compsize |
 ```
+
 This will help greatly to have an idea of what changes happened in our last snapshots.
 
 ## Install snapper-rollback for easy snapper rollbacks
@@ -416,6 +433,7 @@ sudo apt install python3-btrfsutil
 ```bash
 sudo nano /etc/snapper-rollback.conf
 ```
+
 ```bash
 subvol_main = @
 subvol_snapshots = @snapshots
@@ -434,6 +452,7 @@ sudo snapper list
  2  | single |       | Fri 30 Jul 2021 10:00:08 PM PDT | root | timeline | timeline     |
  3  | single |       | Fri 30 Jul 2021 11:00:08 PM PDT | root | timeline | timeline     |
 ```
+
 ```bash
 sudo snapper-rollback 1        # let's revert back to the snapshot whos description is `base-install`
 Are you SURE you want to rollback? Type 'CONFIRM' to continue: CONFIRM
@@ -441,17 +460,19 @@ Are you SURE you want to rollback? Type 'CONFIRM' to continue: CONFIRM
 ```
 
 ## Notes
-* This article is geared to towards Debian and its installer.
-* Once Grub2 gets luks2 support with argon2 the kbkdf can get upgraded to argon2 again.
-* I would much rather use the limine bootloader with snapper and limine-snapper-sync, but alas, I haven't gotten that configuration working as of yet in Debian... Maybe in a future article...
+
+- This article is geared to towards Debian and its installer.
+- Once Grub2 gets luks2 support with argon2 the kbkdf can get upgraded to argon2 again.
+- I would much rather use the limine bootloader with snapper and limine-snapper-sync, but alas, I haven't gotten that configuration working as of yet in Debian... Maybe in a future article...
 
 ## References
-* [Debian 12 with LUKS, BTRFS, and subvolumes](https://www.matuck.com/tech/2023/09/03/Debian-12-with-LUKS,-BTRFS,-and-subvolumes.html)
-* [Installing Debian with BTRFS, snapper, and grub-btrfs](https://medium.com/@inatagan/installing-debian-with-btrfs-snapper-backups-and-grub-btrfs-27212644175f)
-* [Better snapshot descriptions](https://gist.github.com/imthenachoman/f722f6d08dfb404fed2a3b2d83263118)
-* [Full disk encryption, including /boot: Unlocking LUKS devices from GRUB](https://cryptsetup-team.pages.debian.net/cryptsetup/encrypted-boot.html)
-* [CachyOS Wiki - Filesystem - BTRFS - Subvolume Layout](https://wiki.cachyos.org/installation/filesystem/#subvolume-layout)
-* [Conversion from LUKS1 to LUKS2 and back](https://wiki.archlinux.org/title/Dm-crypt/Device_encryption#Conversion_from_LUKS1_to_LUKS2_and_back)
-* [JWillikers BTRFS Layout](https://www.jwillikers.com/btrfs-layout)
-* [openSUSE Default Subvolumes](https://en.opensuse.org/SDB:BTRFS#Default_Subvolumes)
-* [snapper-rollback Github](https://github.com/jrabinow/snapper-rollback)
+
+- [Debian 12 with LUKS, BTRFS, and subvolumes](https://www.matuck.com/tech/2023/09/03/Debian-12-with-LUKS,-BTRFS,-and-subvolumes.html)
+- [Installing Debian with BTRFS, snapper, and grub-btrfs](https://medium.com/@inatagan/installing-debian-with-btrfs-snapper-backups-and-grub-btrfs-27212644175f)
+- [Better snapshot descriptions](https://gist.github.com/imthenachoman/f722f6d08dfb404fed2a3b2d83263118)
+- [Full disk encryption, including /boot: Unlocking LUKS devices from GRUB](https://cryptsetup-team.pages.debian.net/cryptsetup/encrypted-boot.html)
+- [CachyOS Wiki - Filesystem - BTRFS - Subvolume Layout](https://wiki.cachyos.org/installation/filesystem/#subvolume-layout)
+- [Conversion from LUKS1 to LUKS2 and back](https://wiki.archlinux.org/title/Dm-crypt/Device_encryption#Conversion_from_LUKS1_to_LUKS2_and_back)
+- [JWillikers BTRFS Layout](https://www.jwillikers.com/btrfs-layout)
+- [openSUSE Default Subvolumes](https://en.opensuse.org/SDB:BTRFS#Default_Subvolumes)
+- [snapper-rollback Github](https://github.com/jrabinow/snapper-rollback)

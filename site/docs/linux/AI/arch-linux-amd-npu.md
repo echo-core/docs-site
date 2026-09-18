@@ -182,7 +182,9 @@ While inference is running, monitor the NPU:
 ```bash
 amdgpu_top
 ```
+
 Scroll to the bottom to see what PID is using the NPU, as well as metrics. See example output below.
+
 ```bash
 XDNA fdinfo
 Name  PID    Memory   NPU

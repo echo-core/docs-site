@@ -6,7 +6,7 @@ This repository contains the documentation website for Echo Core, built using [D
 
 ## Project Structure
 
-```
+```text
 docs-site/
 ├── .crow/              # CI/CD workflow configurations
 │   └── site.yaml       # Crow/Woodpecker CI configuration
@@ -28,22 +28,26 @@ docs-site/
 ### Installation
 
 1. Clone the repository:
+
    ```bash
    git clone https://github.com/echo-core/docs-site.git
    cd docs-site
    ```
 
 2. Navigate to the site directory:
+
    ```bash
    cd site
    ```
 
 3. Enable corepack (if not already enabled):
+
    ```bash
    corepack enable
    ```
 
 4. Install dependencies:
+
    ```bash
    pnpm install --frozen-lockfile
    ```
@@ -51,6 +55,7 @@ docs-site/
 ### Local Development
 
 Start the development server (from the `site/` directory):
+
 ```bash
 pnpm start
 ```
@@ -60,6 +65,7 @@ This command starts a local development server and opens up a browser window. Mo
 ### Building
 
 Generate static content for production (from the `site/` directory):
+
 ```bash
 pnpm build
 ```
@@ -69,6 +75,7 @@ This command generates static content into the `build` directory and can be serv
 ### Serving Built Site Locally
 
 To test the production build locally (from the `site/` directory):
+
 ```bash
 pnpm serve
 ```
@@ -89,7 +96,8 @@ The CI/CD pipeline includes the following steps:
 ### Preview Deployments
 
 When you open a pull request, a preview deployment is automatically created and deployed to Surge. The preview URL follows the pattern:
-```
+
+```text
 https://echo-core-docs-site-pr-{PR_NUMBER}.surge.sh
 ```
 
@@ -121,6 +129,7 @@ The following secrets must be configured in your CI/CD environment:
 ## Documentation
 
 For more information about Docusaurus and how to customize this site, refer to:
+
 - [Docusaurus Documentation](https://docusaurus.io/docs)
 - [Docusaurus Configuration](https://docusaurus.io/docs/configuration)
 - [Docusaurus Markdown Features](https://docusaurus.io/docs/markdown-features)

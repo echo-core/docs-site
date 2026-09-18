@@ -5,10 +5,10 @@ sidebar_position: 1
 
 At the time of writing, this will upgrade `postgres` `16` to `17`. This guide will walk through:
 
-* Creating a backup.
-* Installing the new version of `postgres`.
-* Importing the backup.
-* Verifying the upgrade was a success.
+- Creating a backup.
+- Installing the new version of `postgres`.
+- Importing the backup.
+- Verifying the upgrade was a success.
 
 _This guide assumes you already have an existing image configured and working._
 
@@ -27,6 +27,7 @@ Take care to double check before editing your `yaml` files and verify the comman
 ```bash
 mkdir ${DB_PATH}/pg-bu
 ```
+
 2. Modify your existing image and mount the directory.
 
 ```yaml
@@ -50,6 +51,7 @@ mkdir ${DB_PATH}/pg-bu
     env_file:
       - .env
 ```
+
 3. Create the backup.
 
 _Modify `$POSTGRES_USER` to your `postgres` admin user._
@@ -71,6 +73,7 @@ docker compose down
 ```bash
 mkdir ${DB_PATH}/pg17
 ```
+
 2. Modify your docker compose file for the new version.
 
 _Note: the tag has changed to `17` and the volume have changed to `pg17`._
@@ -96,6 +99,7 @@ _Note: the tag has changed to `17` and the volume have changed to `pg17`._
     env_file:
       - .env
 ```
+
 3. Start the new container.
 
 ```bash
@@ -129,7 +133,8 @@ docker exec -it postgres /bin/bash -c 'psql -U $POSTGRES_USER -l'
 ```
 
 You should get output similar to below verifying the databases exist:
-```
+
+```text
                                                      List of databases
     Name     |    Owner    | Encoding | Locale Provider |  Collate   |   Ctype    | Locale | ICU Rules | Access privileges
 -------------+-------------+----------+-----------------+------------+------------+--------+-----------+-------------------
@@ -149,4 +154,5 @@ You should get output similar to below verifying the databases exist:
 ```
 
 ## References
-* [Upgrade PostgresSQL from 16 to 17 in Docker](https://blog.oxyconit.com/how-to-update-postgres-16-to-17-in-docker)
+
+- [Upgrade PostgresSQL from 16 to 17 in Docker](https://blog.oxyconit.com/how-to-update-postgres-16-to-17-in-docker)
