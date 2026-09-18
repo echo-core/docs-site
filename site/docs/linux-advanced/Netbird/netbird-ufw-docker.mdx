@@ -23,7 +23,7 @@ The goal is to:
 
 ---
 
-# Overview
+## Overview
 
 A working deployment uses both:
 
@@ -51,7 +51,7 @@ The following ports must remain available on the host [SSH is optional]:
 
 ---
 
-# Install UFW-Docker
+## Install UFW-Docker
 
 Download and install the utility:
 
@@ -90,7 +90,7 @@ Expected output should include:
 
 ---
 
-# Configure Host Firewall Rules
+## Configure Host Firewall Rules
 
 Create the required host-level rules:
 
@@ -120,7 +120,7 @@ Expected:
 
 ---
 
-# Configure Docker Forwarding Rules
+## Configure Docker Forwarding Rules
 
 Allow the NetBird services exposed through Docker:
 
@@ -146,9 +146,9 @@ Example:
 
 ---
 
-# Verification
+## Verification
 
-## Verify Public Services
+### Verify Public Services
 
 From an external system:
 
@@ -167,7 +167,7 @@ PORT    STATE SERVICE
 
 ---
 
-## Verify NetBird Proxy Authentication
+### Verify NetBird Proxy Authentication
 
 Test:
 
@@ -205,7 +205,7 @@ To prevent this, **do not** perform Docker upgrades over the Netbird tunnel. Ins
 3. Directly via SSH using the VPS’s public IP address.
 
 **Resolution:**
-If rules are found to be missing after an upgrade, re-apply them using the `ufw-docker allow` commands listed in Section 3.
+If rules are found to be missing after an upgrade, re-apply them using the `ufw-docker allow` commands listed in [Configure Docker Forwarding Rules](#configure-docker-forwarding-rules).
 
 ### SSO stops working
 
