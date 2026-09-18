@@ -4,6 +4,7 @@ description: Where will you go?
 hide_table_of_contents: true
 ---
 ## Where will you go?
+
 Have you ever thought about where you will go one day after this life is over? We have all seen the cartoons with an angel and a devil on the characters shoulder, the angel yelling good things into one ear and the little devil yelling bad things into the other ear, leaving the character with a choice to make. Even with a silly illustration like this, there is truth. There is a _heaven_ and _hell_ and we get to choose where to go.
 
 God allows us to know where we are going. You don't have to guess. You can know for sure!
@@ -14,18 +15,21 @@ God allows us to know where we are going. You don't have to guess. You can know 
 So there is a simple question that remains, how? Is it something I have to work for or do? Do I need to be a good person? Really, what does it boil down to?
 
 ## There is a problem...
-1. Understand the problem (___...and it's a big one!___) at hand. ___We are all sinners...___
+
+1. Understand the problem (_**...and it's a big one!**_) at hand. _**We are all sinners...**_
+
 :::warning
 [Romans 3:23](https://www.bible.com/bible/1713/ROM.3.23) says, _For all have sinned and fall short of the glory of God;_
 :::
 
-2. Understand there is a ___price___ for our ___sin___...
+2. Understand there is a _**price**_ for our _**sin**_...
+
 :::danger
 [Romans 6:23a](https://www.bible.com/bible/1713/ROM.6.23) says, _For the wages of sin is death..._
 :::
-Because we are born as sinners into this world, our destination is ___hell___ because of the wicked, sinful nature of our hearts.
+Because we are born as sinners into this world, our destination is _**hell**_ because of the wicked, sinful nature of our hearts.
 
-Ok, so you may say, "All I've heard is bad news so far. Is there any ___good news___?" I'm glad you asked, there is indeed!
+Ok, so you may say, "All I've heard is bad news so far. Is there any _**good news**_?" I'm glad you asked, there is indeed!
 
 ## There is a solution...
 
@@ -53,7 +57,7 @@ Call on the name of the Lord and be saved! If we believe and confess our sin, we
 [Romans 10:9-10](https://www.bible.com/bible/1713/ROM.10.9-10) says, _If you confess with your mouth, “Jesus is Lord,” and believe in your heart that God raised him from the dead, you will be saved. One believes with the heart, resulting in righteousness, and one confesses with the mouth, resulting in salvation._
 :::
 
-Salvation is really this simple. There are no gotchas, it's just ___faith___ in Jesus Christ alone. No works, you can't earn your way to heaven. If you've done this and truly believe, you are now a follower of Jesus. Go and live for him!
+Salvation is really this simple. There are no gotchas, it's just _**faith**_ in Jesus Christ alone. No works, you can't earn your way to heaven. If you've done this and truly believe, you are now a follower of Jesus. Go and live for him!
 
 ## Is there anything else?
 

@@ -5,7 +5,8 @@ This document will walk through the steps to setup a shared Steam Library so tha
 ## Create mount and directory
 
 _This will avoid snapshot rollbacks messing with your game files and allow you to setup independant snapshots if you want:_
-```
+
+```bash
 BTRFS_MNT=$(findmnt -n -o SOURCE / | sed 's/\[.*//' | awk -F/ '{print $NF}') \
 sudo mkdir -p /data \
 sudo mount -o subvol=/ /dev/mapper/$BTRFS_MNT /mnt \
@@ -18,27 +19,40 @@ sudo systemctl daemon-reload \
 sudo mount -av \
 mkdir -p /data/games
 ```
-:::tip Once done, just verify the output of your `/etc/fstab` looks correct. It should look something like below.
-```
-cat /etc/fstab|grep /data
+
+:::tip[Verify fstab]
+
+Once done, just verify the output of your `/etc/fstab` looks correct. It should look something like below.
+
+```bash
+cat /etc/fstab | grep /data
 /dev/mapper/luks-72289a87-7aed-4559-a334-794c3557834a /data          btrfs   subvol=/@data,defaults,noatime,compress=zstd,commit=120 0 0
 ```
+
 :::
+
 ## Add user(s) to the `games` group
-```
+
+```bash
 sudo usermod -a -G games <user>
 ```
+
 ## Set directory permissions and default permissions
-```
+
+```bash
 sudo chown root:games /data/games
 sudo setfacl -d -m g:games:rwx /data/games
 ```
+
 For existing libraries, you can set your new default permissions recursively
-```
+
+```bash
 getfacl -d /data/games|sudo setfacl -d -R --set-file=- /data/games
 ```
+
 ## Verify permissions
-```
+
+```bash
 getfacl /data/games
 # file: data/games
 # owner: root
@@ -54,10 +68,13 @@ default:group:games:rwx
 default:mask::rwx
 default:other::r-x
 ```
+
 ## Configure Steam
 
 You should now be able login to Steam and add the new library and move the games files around without issue. Other users on the computer within the `games` group should be able to use the library.
-```
+
+```text
 Steam > Settings > Storage > Add Drive + > Let me choose another location > Add > Browse to `/data/games` > Click `Ok`.
 ```
+
 _Set the new library as the default and download or move some games to it._

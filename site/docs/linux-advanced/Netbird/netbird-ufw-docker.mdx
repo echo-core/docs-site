@@ -1,0 +1,343 @@
+---
+title: NetBird with UFW-Docker
+description: Configure UFW-Docker with a self-hosted NetBird deployment while maintaining NetBird Proxy, SSO, and container security.
+sidebar_position: 10
+---
+
+# NetBird with UFW-Docker
+
+This guide documents a working UFW-Docker configuration for a self-hosted NetBird deployment using:
+
+- NetBird
+- NetBird Proxy
+- Traefik
+- UFW
+- UFW-Docker
+
+The goal is to:
+
+- Prevent Docker from bypassing UFW.
+- Maintain NetBird Proxy SSO functionality.
+- Keep required NetBird services publicly accessible.
+- Allow Docker services to be managed through UFW-Docker.
+
+---
+
+## Overview
+
+A working deployment uses both:
+
+```text
+ufw
+```
+
+for host firewall rules and:
+
+```text
+ufw-docker
+```
+
+for Docker forwarding integration.
+
+The following ports must remain available on the host:
+
+:::note
+
+SSH is optional
+
+:::
+
+| Port | Purpose |
+|--------|--------|
+| 22/tcp | SSH |
+| 80/tcp | HTTP |
+| 443/tcp | HTTPS |
+| 443/udp | HTTPS/QUIC |
+| 3478/udp | NetBird STUN |
+
+---
+
+## Install UFW-Docker
+
+Download and install the utility:
+
+```bash
+wget -O /usr/local/bin/ufw-docker \
+  https://github.com/chaifeng/ufw-docker/raw/master/ufw-docker
+
+chmod +x /usr/local/bin/ufw-docker
+
+ufw-docker install --system
+```
+
+Install the service:
+
+```bash
+ufw-docker install-service
+```
+
+Restart UFW:
+
+```bash
+systemctl restart ufw
+```
+
+Verify installation:
+
+```bash
+iptables -S DOCKER-USER
+```
+
+Expected output should include:
+
+```text
+-A DOCKER-USER -j ufw-user-forward
+```
+
+---
+
+## Configure Host Firewall Rules
+
+Create the required host-level rules:
+
+```bash
+ufw allow 22/tcp
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw allow 443/udp
+ufw allow 3478/udp
+```
+
+Verify:
+
+```bash
+ufw status numbered
+```
+
+Expected:
+
+```text
+22/tcp
+80/tcp
+443/tcp
+443/udp
+3478/udp
+```
+
+---
+
+## Configure Docker Forwarding Rules
+
+Allow the NetBird services exposed through Docker:
+
+```bash
+ufw-docker allow netbird-traefik 80/tcp
+ufw-docker allow netbird-traefik 443/tcp
+ufw-docker allow netbird-server 3478/udp
+```
+
+Verify:
+
+```bash
+ufw-docker status
+```
+
+Example:
+
+```text
+[ 6] 172.30.0.10 80/tcp         ALLOW FWD   Anywhere                   # allow netbird-traefik 80/tcp netbird_netbird
+[ 7] 172.30.0.10 443/tcp        ALLOW FWD   Anywhere                   # allow netbird-traefik 443/tcp netbird_netbird
+[ 8] 172.30.0.3 3478/udp        ALLOW FWD   Anywhere                   # allow netbird-server 3478/udp netbird_netbird
+```
+
+---
+
+## Verification
+
+### Verify Public Services
+
+From an external system:
+
+```bash
+nmap -Pn <public-ip>
+```
+
+Expected:
+
+```text
+PORT    STATE SERVICE
+22/tcp  open  ssh
+80/tcp  open  http
+443/tcp open  https
+```
+
+---
+
+### Verify NetBird Proxy Authentication
+
+Test:
+
+- Dashboard login
+- SSO login
+- Protected applications
+
+Expected flow:
+
+```text
+Application
+    ↓
+NetBird Proxy
+    ↓
+OIDC Login
+    ↓
+Identity Provider
+    ↓
+Application Access
+```
+
+---
+
+## Troubleshooting & Maintenance
+
+---
+
+### Docker Upgrade Connectivity Issues
+If container accessibility issues reappear after a Docker upgrade, it may be due to a race condition where firewall rules are dropped during the update process.
+
+**Prevention:**
+To prevent this, **do not** perform Docker upgrades over the Netbird tunnel. Instead, perform the upgrade:
+1. Directly from the GreenCloud VPS console, or
+2. Via `tmux` or `screen`.
+3. Directly via SSH using the VPS’s public IP address.
+
+**Resolution:**
+If rules are found to be missing after an upgrade, re-apply them using the `ufw-docker allow` commands listed in [Configure Docker Forwarding Rules](#configure-docker-forwarding-rules).
+
+### SSO stops working
+
+After installing UFW-Docker and removing host-level firewall rules, NetBird Proxy SSO stops working.
+
+Common errors:
+
+```text
+authentication infrastructure error
+```
+
+or:
+
+```text
+dial tcp <public-ip>:443: i/o timeout
+```
+
+Users may also experience endless redirects or failed application authentication.
+
+---
+
+#### Cause
+
+NetBird Proxy uses the public OIDC authority URL configured by NetBird.
+
+Example:
+
+```text
+https://vpn.example.com/oauth2
+```
+
+During authentication, NetBird Proxy resolves the public hostname and connects through the public HTTPS endpoint.
+
+If host firewall rules for:
+
+```text
+80/tcp
+443/tcp
+```
+
+are removed and only UFW-Docker forwarding rules remain, OIDC authentication may fail even though the services themselves remain reachable.
+
+Authentication flow:
+
+```text
+NetBird Proxy
+    ↓
+Public Hostname
+    ↓
+Public HTTPS Endpoint
+    ↓
+OIDC Discovery
+```
+
+Because the authentication flow still relies on the public endpoint, host-level firewall rules must remain in place.
+
+---
+
+#### Resolution
+
+Re-add the required UFW rules:
+
+```bash
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw allow 443/udp
+ufw allow 3478/udp
+```
+
+Verify NetBird Proxy authentication again.
+
+In testing, restoring these rules immediately restored SSO functionality.
+
+---
+
+## Common Diagnostic Commands
+
+### Check UFW Rules
+
+```bash
+ufw status numbered
+```
+
+### Check UFW-Docker Rules
+
+```bash
+ufw-docker status
+```
+
+### Check DOCKER-USER Chain
+
+```bash
+iptables -S DOCKER-USER
+```
+
+### Verify OIDC Discovery
+
+```bash
+wget -S -O - \
+  https://vpn.example.com/oauth2/.well-known/openid-configuration
+```
+
+### Verify Public HTTPS
+
+```bash
+curl -I https://vpn.example.com
+```
+
+### Inspect Proxy Logs
+
+```bash
+docker logs -f netbird-proxy
+```
+
+### Inspect Traefik Logs
+
+```bash
+docker logs -f traefik
+```
+
+---
+
+# References
+
+- [UFW-Docker Project](https://github.com/chaifeng/ufw-docker)
+- [UFW-Docker Documentation](https://github.com/chaifeng/ufw-docker#installation)
+- [NetBird Self-Hosting Guide](https://docs.netbird.io/selfhosted/selfhosted-quickstart)
+- [NetBird Ports and Firewalls](https://docs.netbird.io/about-netbird/ports-and-firewalls)
+- [Docker DOCKER-USER Chain Documentation](https://docs.docker.com/engine/network/packet-filtering-firewalls/)

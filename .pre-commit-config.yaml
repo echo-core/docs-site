@@ -1,4 +1,4 @@
-default_install_hook_types: # Determines hooks installed by `pre-commit install --install-hooks`.
+default_install_hook_types: # Determines hooks installed by `prek install --install-hooks`.
 -   commit-msg
 -   pre-commit
 -   pre-push
@@ -30,10 +30,9 @@ repos:
     -   id: check-yaml
         args:
         -   --allow-multiple-documents
--   repo: https://github.com/antonbabenko/pre-commit-terraform
-    rev: 581213484f4262600d17c71e272176d4eb6724a5 # frozen: v1.109.0
+-   repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: 5b5dddc4fb0f83c3ea1fc5616fa63e115dce83e0 # frozen: v0.49.1
     hooks:
-    -   id: terraform_fmt
-    -   id: terraform_tflint
-    #-   id: terraform_docs
-    #    stages: [pre-commit, pre-push]
+    -   id: markdownlint
+        args:
+        -   "--fix"
