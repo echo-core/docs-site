@@ -85,11 +85,8 @@ steps:
     commands:
       - |
         set -eu
-        msg="${CI_COMMIT_MESSAGE}"
-        echo "Debug: Commit message is: $msg"
-        # Use printf %s to ensure the string is handled literally,
-        # preventing the shell from trying to execute 'pull' as a command.
-        pr=$(printf '%s' "$msg" | grep -oE 'pull request #[0-9]+' | grep -oE '[0-9]+' | head -n 1)
+        echo "Debug: Commit message is: $CI_COMMIT_MESSAGE"
+        pr=$(printf '%s' "$CI_COMMIT_MESSAGE" | grep -oE 'pull request #[0-9]+' | grep -oE '[0-9]+' | head -n 1)
         if [ -z "${pr:-}" ]; then
           echo "No PR number found; skipping teardown."
           exit 0
@@ -98,6 +95,8 @@ steps:
         echo "Tearing down Surge preview: $domain"
         surge teardown "$domain"
     environment:
+      CI_COMMIT_MESSAGE:
+        from_secret: ""   # see note below
       SURGE_TOKEN:
         from_secret: SURGE_TOKEN
     failure: ignore
