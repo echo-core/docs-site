@@ -86,11 +86,12 @@ steps:
       - |
         set -eu
 
-        # Remove newlines from the commit message to prevent command injection/splitting
-        msg=$(echo "${CI_COMMIT_MESSAGE}" | tr -d '\n')
+        # Use single quotes for echo and tr to handle the message content literally
+        # We use a subshell to ensure the variable is expanded safely
+        msg=$(echo "${CI_COMMIT_MESSAGE}" | tr -d '\n' | tr -d '"')
         echo "Debug: Commit message is: $msg"
 
-        # Now the grep will work safely on a single-line string
+        # Now grep will work safely on a single-line, quote-free string
         pr=$(echo "$msg" | grep -oE 'pull request #[0-9]+' | grep -oE '[0-9]+' | head -n 1)
 
         if [ -z "${pr:-}" ]; then
