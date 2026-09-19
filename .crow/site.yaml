@@ -89,9 +89,9 @@ steps:
         msg="${CI_COMMIT_MESSAGE}"
         echo "Debug: Commit message is: $msg"
 
-        # Use grep with -o and a regex that looks for digits following 'pull request #'
-        # This ignores newlines and handles literal \n characters gracefully
-        pr=$(echo "$msg" | grep -oE 'pull request #[0-9]+' | grep -oE '[0-9]+' | head -n 1)
+        # Use printf %s to ensure the string is handled literally,
+        # preventing the shell from trying to execute 'pull' as a command.
+        pr=$(printf '%s' "$msg" | grep -oE 'pull request #[0-9]+' | grep -oE '[0-9]+' | head -n 1)
 
         if [ -z "${pr:-}" ]; then
           echo "No PR number found; skipping teardown."
