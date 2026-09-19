@@ -87,10 +87,11 @@ steps:
         set -eu
 
         msg="${CI_COMMIT_MESSAGE}"
-        echo "Current message: ${CI_COMMIT_MESSAGE}"
+        echo "Debug: Commit message is: $msg"
 
-        # Extract PR number from GitHub merge commit messages
-        pr="$(printf '%s\n' "$msg" | grep -oE 'pull request #[0-9]+' | grep -oE '[0-9]+')"
+        # Use grep with -o and a regex that looks for digits following 'pull request #'
+        # This ignores newlines and handles literal \n characters gracefully
+        pr=$(echo "$msg" | grep -oE 'pull request #[0-9]+' | grep -oE '[0-9]+' | head -n 1)
 
         if [ -z "${pr:-}" ]; then
           echo "No PR number found; skipping teardown."
