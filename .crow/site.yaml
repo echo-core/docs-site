@@ -86,12 +86,12 @@ steps:
       - |
         set -eu
 
-        msg="${CI_COMMIT_MESSAGE}"
+        # Remove newlines from the commit message to prevent command injection/splitting
+        msg=$(echo "${CI_COMMIT_MESSAGE}" | tr -d '\n')
         echo "Debug: Commit message is: $msg"
 
-        # Use printf %s to ensure the string is handled literally,
-        # preventing the shell from trying to execute 'pull' as a command.
-        pr=$(printf '%s' "$msg" | grep -oE 'pull request #[0-9]+' | grep -oE '[0-9]+' | head -n 1)
+        # Now the grep will work safely on a single-line string
+        pr=$(echo "$msg" | grep -oE 'pull request #[0-9]+' | grep -oE '[0-9]+' | head -n 1)
 
         if [ -z "${pr:-}" ]; then
           echo "No PR number found; skipping teardown."
