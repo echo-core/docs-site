@@ -95,8 +95,6 @@ steps:
         echo "Tearing down Surge preview: $domain"
         surge teardown "$domain"
     environment:
-      CI_COMMIT_MESSAGE:
-        from_secret: ""   # see note below
       SURGE_TOKEN:
         from_secret: SURGE_TOKEN
     failure: ignore
