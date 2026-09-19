@@ -87,11 +87,11 @@ steps:
         set -eu
         echo "Debug: Commit message is: $CI_COMMIT_MESSAGE"
         pr=$(printf '%s' "$CI_COMMIT_MESSAGE" | grep -oE 'pull request #[0-9]+' | grep -oE '[0-9]+' | head -n 1)
-        if [ -z "${pr:-}" ]; then
+        if [ -z "$${pr:-}" ]; then
           echo "No PR number found; skipping teardown."
           exit 0
         fi
-        domain="${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${pr}.surge.sh"
+        domain="${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-$${pr}.surge.sh"
         echo "Tearing down Surge preview: $domain"
         surge teardown "$domain"
     environment:
