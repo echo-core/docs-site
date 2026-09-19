@@ -15,6 +15,7 @@ steps:
     when:
       - path: *site_path
         event: [push, pull_request]
+        evaluate: 'CI_COMMIT_BRANCH != CI_REPO_DEFAULT_BRANCH'
     directory: *site_work_path
     commands:
       - apk add uv git
