@@ -46,7 +46,6 @@ Replace the example container names and `netbird_netbird` network with the names
 | 22/tcp | Host SSH | Optional administrative access |
 | 80/tcp and 443/tcp | Traefik | Public dashboard, API, relay and HTTPS ingress |
 | 3478/udp | NetBird server | Public STUN |
-| 51820/udp | NetBird Proxy | Optional fixed-port direct transport |
 | 5432/tcp | PostgreSQL | Selected NetBird peers only |
 
 This setup assumes UFW is already enabled. Keep the host allowances used by your deployment:
