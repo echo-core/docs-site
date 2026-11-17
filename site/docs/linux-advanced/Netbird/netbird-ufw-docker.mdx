@@ -58,14 +58,6 @@ ufw allow 443/tcp
 ufw allow 3478/udp
 ```
 
-If the optional fixed-port NetBird Proxy transport is served by a host listener, allow that host-input path through UFW:
-
-```bash
-ufw allow 51820/udp
-```
-
-For a Docker-published IPv4 port, use the UFW-Docker forwarding allowance shown below. A host-input rule is a separate allowance and does not replace it.
-
 If you use QUIC on UDP 443, retain that allowance too. A firewall rule alone does not create a listener or publish a Docker port. Host-input and Docker-forwarding rules cover different paths; inspect both, including IPv6, before removing an existing rule.
 
 ### Install UFW-Docker
