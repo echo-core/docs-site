@@ -1,343 +1,379 @@
 ---
 title: NetBird with UFW-Docker
-description: Configure UFW-Docker with a self-hosted NetBird deployment while maintaining NetBird Proxy, SSO, and container security.
+description: Keep Docker services private, allow NetBird's policy-approved traffic, and verify the authorization mark used by the UFW hook.
 sidebar_position: 10
 ---
 
 # NetBird with UFW-Docker
 
-This guide documents a working UFW-Docker configuration for a self-hosted NetBird deployment using:
+I use UFW-Docker to control public access to containers and NetBird policies to control access between peers. Both need to agree before a connection reaches a Docker service.
 
-- NetBird
-- NetBird Proxy
-- Traefik
-- UFW
-- UFW-Docker
+This guide covers the public NetBird services, a forwarding problem that affected PostgreSQL backups, and the UFW hook that fixed it without changing the upstream `ufw-docker` script.
 
-The goal is to:
+The hook was tested on Debian 13 with NetBird 0.83.1, Docker 29.9.3, and the iptables-nft backend on November 17, 2026. It covers the IPv4 NetBird path. Recheck the mark and firewall backend before applying it elsewhere or after an upgrade.
 
-- Prevent Docker from bypassing UFW.
-- Maintain NetBird Proxy SSO functionality.
-- Keep required NetBird services publicly accessible.
-- Allow Docker services to be managed through UFW-Docker.
+## How the firewall layers fit together
 
----
+| Layer | What it controls |
+| --- | --- |
+| UFW host rules | Connections delivered to the host itself |
+| UFW-Docker | Forwarded connections to Docker-published ports |
+| NetBird policies | Which peers may reach a peer or resource |
 
-## Overview
+Docker usually rewrites an incoming published-port connection to the container's address. That process, called destination NAT or DNAT, moves the packet through `FORWARD` rather than `INPUT`. A host rule such as `ufw allow 5432/tcp` therefore does not describe the whole Docker path.
 
-A working deployment uses both:
+UFW-Docker places its checks in `DOCKER-USER`, ahead of Docker's forwarding rules. [Docker documents this ordering](https://docs.docker.com/engine/network/firewall-iptables/).
 
-```text
-ufw
-```
+Run the server commands below as root. Use the VPS's public-IP SSH connection or provider console when changing its firewall. A `tmux` session preserves a shell, but it does not provide another network path if NetBird stops working.
 
-for host firewall rules and:
+<a id="configure-host-firewall-rules" />
 
-```text
-ufw-docker
-```
+## Allow the public NetBird services
 
-for Docker forwarding integration.
+These names match my Compose deployment. Replace the container and Docker network names if yours differ.
 
-The following ports must remain available on the host:
+| Port | Service | Exposure |
+| --- | --- | --- |
+| 22/tcp | Host SSH | Optional administrative access |
+| 80/tcp and 443/tcp | Traefik | Public dashboard, API, relay and HTTPS ingress |
+| 3478/udp | NetBird server | Public STUN |
+| 51820/udp | NetBird Proxy | Optional fixed-port direct transport |
+| 5432/tcp | PostgreSQL | Selected NetBird peers only |
 
-:::note
-
-SSH is optional
-
-:::
-
-| Port | Purpose |
-|--------|--------|
-| 22/tcp | SSH |
-| 80/tcp | HTTP |
-| 443/tcp | HTTPS |
-| 443/udp | HTTPS/QUIC |
-| 3478/udp | NetBird STUN |
-
----
-
-## Install UFW-Docker
-
-Download and install the utility:
-
-```bash
-wget -O /usr/local/bin/ufw-docker \
-  https://github.com/chaifeng/ufw-docker/raw/master/ufw-docker
-
-chmod +x /usr/local/bin/ufw-docker
-
-ufw-docker install --system
-```
-
-Install the service:
-
-```bash
-ufw-docker install-service
-```
-
-Restart UFW:
-
-```bash
-systemctl restart ufw
-```
-
-Verify installation:
-
-```bash
-iptables -S DOCKER-USER
-```
-
-Expected output should include:
-
-```text
--A DOCKER-USER -j ufw-user-forward
-```
-
----
-
-## Configure Host Firewall Rules
-
-Create the required host-level rules:
+This setup assumes UFW is already enabled. Keep the host allowances used by your deployment:
 
 ```bash
 ufw allow 22/tcp
 ufw allow 80/tcp
 ufw allow 443/tcp
-ufw allow 443/udp
 ufw allow 3478/udp
 ```
 
-Verify:
+If you use QUIC on UDP 443, retain that allowance too. A firewall rule alone does not create a listener or publish a Docker port. Host-input and Docker-forwarding rules cover different paths; inspect both, including IPv6, before removing an existing rule.
+
+### Install UFW-Docker
+
+Skip this step if it is already installed. This is the upstream script revision used for the tested setup; review upstream changes before choosing another revision.
 
 ```bash
-ufw status numbered
+wget -O /usr/local/bin/ufw-docker \
+  https://raw.githubusercontent.com/chaifeng/ufw-docker/020a8699f95592561f254d8d4ad1bb40d401dfc7/ufw-docker
+chmod 0755 /usr/local/bin/ufw-docker
+ufw-docker install
+ufw-docker install-service
+ufw reload
 ```
 
-Expected:
+The final reload is for this initial installation. Adding the NetBird hook later does not require another global reload.
 
-```text
-22/tcp
-80/tcp
-443/tcp
-443/udp
-3478/udp
-```
+<a id="configure-docker-forwarding-rules" />
 
----
-
-## Configure Docker Forwarding Rules
-
-Allow the NetBird services exposed through Docker:
+### Allow the published containers
 
 ```bash
-ufw-docker allow netbird-traefik 80/tcp
-ufw-docker allow netbird-traefik 443/tcp
-ufw-docker allow netbird-server 3478/udp
+ufw-docker allow netbird-traefik 80/tcp netbird_netbird
+ufw-docker allow netbird-traefik 443/tcp netbird_netbird
+ufw-docker allow netbird-server 3478/udp netbird_netbird
 ```
 
-Verify:
+If NetBird Proxy is configured for fixed-port direct transport, also allow its published port:
 
 ```bash
-ufw-docker status
+ufw-docker allow netbird-proxy 51820/udp netbird_netbird
 ```
 
-Example:
+That optional path requires a matching Docker UDP publication, a listener configured with `NB_PROXY_WG_PORT=51820`, and the appropriate `NB_PROXY_EXTERNAL_IP_MAP`. Opening the firewall alone is not enough.
 
-```text
-[ 6] 172.30.0.10 80/tcp         ALLOW FWD   Anywhere                   # allow netbird-traefik 80/tcp netbird_netbird
-[ 7] 172.30.0.10 443/tcp        ALLOW FWD   Anywhere                   # allow netbird-traefik 443/tcp netbird_netbird
-[ 8] 172.30.0.3 3478/udp        ALLOW FWD   Anywhere                   # allow netbird-server 3478/udp netbird_netbird
-```
-
----
-
-## Verification
-
-### Verify Public Services
-
-From an external system:
-
-```bash
-nmap -Pn <public-ip>
-```
-
-Expected:
-
-```text
-PORT    STATE SERVICE
-22/tcp  open  ssh
-80/tcp  open  http
-443/tcp open  https
-```
-
----
-
-### Verify NetBird Proxy Authentication
-
-Test:
-
-- Dashboard login
-- SSO login
-- Protected applications
-
-Expected flow:
-
-```text
-Application
-    ↓
-NetBird Proxy
-    ↓
-OIDC Login
-    ↓
-Identity Provider
-    ↓
-Application Access
-```
-
----
-
-## Troubleshooting & Maintenance
-
----
-
-### Docker Upgrade Connectivity Issues
-If container accessibility issues reappear after a Docker upgrade, it may be due to a race condition where firewall rules are dropped during the update process.
-
-**Prevention:**
-To prevent this, **do not** perform Docker upgrades over the Netbird tunnel. Instead, perform the upgrade:
-1. Directly from the GreenCloud VPS console, or
-2. Via `tmux` or `screen`.
-3. Directly via SSH using the VPS’s public IP address.
-
-**Resolution:**
-If rules are found to be missing after an upgrade, re-apply them using the `ufw-docker allow` commands listed in [Configure Docker Forwarding Rules](#configure-docker-forwarding-rules).
-
-### SSO stops working
-
-After installing UFW-Docker and removing host-level firewall rules, NetBird Proxy SSO stops working.
-
-Common errors:
-
-```text
-authentication infrastructure error
-```
-
-or:
-
-```text
-dial tcp <public-ip>:443: i/o timeout
-```
-
-Users may also experience endless redirects or failed application authentication.
-
----
-
-#### Cause
-
-NetBird Proxy uses the public OIDC authority URL configured by NetBird.
-
-Example:
-
-```text
-https://vpn.example.com/oauth2
-```
-
-During authentication, NetBird Proxy resolves the public hostname and connects through the public HTTPS endpoint.
-
-If host firewall rules for:
-
-```text
-80/tcp
-443/tcp
-```
-
-are removed and only UFW-Docker forwarding rules remain, OIDC authentication may fail even though the services themselves remain reachable.
-
-Authentication flow:
-
-```text
-NetBird Proxy
-    ↓
-Public Hostname
-    ↓
-Public HTTPS Endpoint
-    ↓
-OIDC Discovery
-```
-
-Because the authentication flow still relies on the public endpoint, host-level firewall rules must remain in place.
-
----
-
-#### Resolution
-
-Re-add the required UFW rules:
-
-```bash
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw allow 443/udp
-ufw allow 3478/udp
-```
-
-Verify NetBird Proxy authentication again.
-
-In testing, restoring these rules immediately restored SSO functionality.
-
----
-
-## Common Diagnostic Commands
-
-### Check UFW Rules
-
-```bash
-ufw status numbered
-```
-
-### Check UFW-Docker Rules
+Check the effective rules and container addresses:
 
 ```bash
 ufw-docker status
+iptables -S DOCKER-USER
+iptables -t nat -S DOCKER
+docker inspect --format '{{range $name, $net := .NetworkSettings.Networks}}{{$name}} {{$net.IPAddress}}{{"\n"}}{{end}}' netbird-server
 ```
 
-### Check DOCKER-USER Chain
+UFW-Docker's allowances contain container IP addresses. After a container is recreated, refresh its allowance with the same `ufw-docker allow` command and check that it matches Docker's current DNAT destination. A container name in a rule comment does not make the address update automatically.
+
+## When NetBird says connected but the database times out
+
+My backup host could ping and SSH to the VPS over NetBird, but PostgreSQL connections timed out. The PostgreSQL container was healthy, and the NetBird policy allowed the backup peer to use TCP 5432.
+
+The packet reached `wt0`, received NetBird's authorization mark, and was then dropped by UFW-Docker after Docker translated the destination to the database container. The kernel log showed:
+
+```text
+[UFW DOCKER BLOCK] IN=wt0 OUT=br-... SRC=100.64.0.10 DST=172.30.0.7 ... DPT=5432 ... MARK=0x1bd20
+```
+
+The addresses above are examples. The important fields are the incoming interface, destination port, and mark.
+
+This was a direct connection to the VPS's NetBird IP. Docker's translation put it on the host's forwarding path; the client did not need to select the VPS as its exit node.
+
+I also tested a blanket `ufw route allow in on wt0` rule. It restored the backup connection, but another peer without the PostgreSQL grant could connect too. On this host, an existing exit route allowed the otherwise-unmarked forwarded traffic. I removed that rule. The hook below instead recognizes the authorization NetBird already applied.
+
+Do not use a public `ufw-docker allow netbird-db 5432/tcp` rule to solve this problem. The tested helper generates a `from any` allowance, which would also admit public connections to the published database port.
+
+## Find NetBird's authorization mark
+
+I identified the mark from the running firewall, then checked its meaning in the source for the installed NetBird version.
+
+Start with:
 
 ```bash
+netbird version
+iptables --version
+nft list chain ip netbird netbird-mangle-prerouting
+nft list chain ip netbird netbird-acl-input-rules
+nft list chain ip netbird netbird-acl-forward-filter
+```
+
+On this nftables-backed installation, the first chain included a rule like this for the allowed backup peer:
+
+```text
+iifname "wt0" ip saddr 100.64.0.10 tcp dport 5432 fib daddr type local meta mark set 0x0001bd20
+```
+
+Read it as: when this peer sends TCP 5432 traffic through `wt0` to a local address, set the packet mark before Docker changes the destination.
+
+Check that the peer ACL also grants the expected source and port. In `netbird-acl-input-rules`, the corresponding rule was:
+
+```text
+ip saddr 100.64.0.10 tcp dport 5432 accept
+```
+
+A mark value by itself is not evidence of permission; check the policy rule and its action too.
+
+The forward filter then included:
+
+```text
+meta mark 0x0001bd20 accept
+iifname "wt0" jump netbird-rt-fwd
+iifname "wt0" drop
+```
+
+The matching `accept` confirms what the mark is used for. The leading zeroes are only formatting: `0x0001bd20` and `0x1bd20` are the same number.
+
+In NetBird 0.83.1, [`client/net/fwmark.go`](https://github.com/netbirdio/netbird/blob/v0.83.1/client/net/fwmark.go) names this value `PreroutingFwmarkRedirected`. Its default calculation is:
+
+```text
+default base 0x1bd00 | redirected offset 0x20 = 0x1bd20
+```
+
+The [`queuePreroutingRule` and `addFwmarkToForward` functions](https://github.com/netbirdio/netbird/blob/v0.83.1/client/firewall/nftables/chains_linux.go) show where NetBird sets and accepts it for traffic redirected from the host to a container.
+
+:::note[Use the running rules as the source of truth]
+`NB_FWMARK_BASE` can change NetBird's mark range. A different release, backend, or configuration may also change the rules. Confirm the paired mark-and-accept behavior before copying the value below. If the `ip netbird` table is absent, identify the actual backend/table first.
+
+This is a **packet mark** (`meta mark`, matched by iptables `-m mark`). It is different from a connection mark (`ct mark`) and from NetBird's masquerade marks. The hook reads it; it never assigns authorization marks itself.
+:::
+
+## Add the UFW hook
+
+UFW supports an executable `/etc/ufw/after.init` customization hook. Keeping the exception there leaves the upstream `ufw-docker` script unchanged. A small systemd drop-in calls the same hook after the existing Docker/UFW-Docker startup sequence.
+
+First inspect the existing files. If `after.init` already contains custom logic, merge this change instead of replacing it. The installation below assumes the stock placeholder hook and no existing `netbird.conf` drop-in.
+
+```bash
+cat /etc/ufw/after.init
+systemctl cat ufw-docker.service
+ls -l /etc/systemd/system/ufw-docker.service.d/
+```
+
+The drop-in directory may not exist yet. Keep the following commands in the same root shell and record the backup directory they print:
+
+```bash
+backup_dir="/root/ufw-netbird-backup-$(date -u +%Y%m%dT%H%M%SZ)"
+install -d -m 0700 "$backup_dir"
+cp -a /etc/ufw/after.init "$backup_dir/after.init"
+iptables -S DOCKER-USER > "$backup_dir/docker-user.rules"
+printf 'Backup directory: %s\n' "$backup_dir"
+```
+
+Create the replacement hook in that protected directory:
+
+```bash
+cat > "$backup_dir/after.init.new" <<'EOF'
+#!/bin/sh
+#
+# after.init: if executable, called by ufw-init. See 'man ufw-framework' for
+#             details. Note that output from these scripts is not seen via the
+#             the ufw command, but instead via ufw-init.
+#
+# Copyright 2013 Canonical Ltd.
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License version 3,
+#    as published by the Free Software Foundation.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+set -eu
+
+NETBIRD_INTERFACE=wt0
+# Observed in NetBird 0.83.1; recheck against its loaded rules after upgrades.
+NETBIRD_AUTHORIZED_LOCAL_SERVICE_MARK=0x1bd20
+
+# UFW start/reload and the Docker lifecycle can invoke this concurrently.
+exec 9>/run/lock/ufw-netbird-policy.lock
+/usr/bin/flock -x 9
+
+netbird_rule() {
+    /usr/sbin/iptables -w 5 "$@" \
+        -i "$NETBIRD_INTERFACE" \
+        -m mark --mark "$NETBIRD_AUTHORIZED_LOCAL_SERVICE_MARK/0xffffffff" \
+        -m conntrack --ctstate NEW,ESTABLISHED,RELATED \
+        -m comment --comment "NetBird-authorized local service" \
+        -j RETURN
+}
+
+case "${1:-}" in
+start)
+    # Do not add firewall state when UFW is disabled.
+    if ! /usr/bin/grep -Eq '^[[:space:]]*ENABLED=yes[[:space:]]*$' /etc/ufw/ufw.conf; then
+        exit 0
+    fi
+    # The Docker service post-start hook retries if this chain is not ready.
+    if ! /usr/sbin/iptables -w 5 -n -L DOCKER-USER >/dev/null 2>&1; then
+        exit 0
+    fi
+    if ! netbird_rule -C DOCKER-USER >/dev/null 2>&1; then
+        netbird_rule -I DOCKER-USER 1
+    fi
+    ;;
+stop|flush-all)
+    # Remove only our exact rule, including any historical duplicates.
+    while netbird_rule -C DOCKER-USER >/dev/null 2>&1; do
+        netbird_rule -D DOCKER-USER
+    done
+    ;;
+status)
+    if netbird_rule -C DOCKER-USER >/dev/null 2>&1; then
+        echo "NetBird authorized-service forwarding: installed"
+    else
+        echo "NetBird authorized-service forwarding: absent"
+    fi
+    ;;
+*)
+    echo "Usage: $0 {start|stop|flush-all|status}" >&2
+    exit 2
+    ;;
+esac
+EOF
+
+sh -n "$backup_dir/after.init.new"
+install -o root -g root -m 0750 "$backup_dir/after.init.new" /etc/ufw/after.init
+```
+
+The named constant makes the rule readable. Only traffic entering `wt0` with NetBird's exact authorization mark and a valid tracked state matches it. `RETURN` skips the remaining UFW-Docker checks and resumes Docker's normal processing. Other public and peer traffic still follows the existing rules.
+
+The hook checks before inserting, serializes concurrent calls, and removes only its exact rule on `stop`. If Docker's chain is not available during UFW startup, the service hook retries after Docker starts.
+
+Add `/etc/systemd/system/ufw-docker.service.d/netbird.conf`:
+
+```bash
+install -d -m 0755 /etc/systemd/system/ufw-docker.service.d
+cat > /etc/systemd/system/ufw-docker.service.d/netbird.conf <<'EOF'
+[Service]
+# Reapply after Docker starts and the existing ufw-docker reload finishes.
+ExecStartPost=/etc/ufw/after.init start
+EOF
+
+systemctl daemon-reload
+/etc/ufw/after.init start
+/etc/ufw/after.init status
+```
+
+This adds an `ExecStartPost`; it preserves the service's existing `ExecStart`. Initial activation does not restart Docker, NetBird, or UFW.
+
+<a id="verification" />
+
+## Verify the allowed and blocked paths
+
+Check the rule and its packet counter:
+
+```bash
+iptables -nvL DOCKER-USER --line-numbers
+/etc/ufw/after.init start
 iptables -S DOCKER-USER
 ```
 
-### Verify OIDC Discovery
+There should be exactly one rule commented `NetBird-authorized local service`, before the UFW-Docker checks. Calling `start` again should not duplicate it. Its counter should increase when the approved peer connects.
+
+Make fresh TCP connections from each relevant source. For example, with netcat available:
 
 ```bash
-wget -S -O - \
+nc -vz -w 3 atlas.nb.example.net 5432
+```
+
+Use the public IP instead of the NetBird hostname for the external test. A successful connection checks TCP reachability, not PostgreSQL credentials or backup correctness.
+
+| Source and destination | Expected result |
+| --- | --- |
+| Peer allowed TCP 5432 → VPS NetBird address | Connects |
+| Actual backup worker/container → VPS NetBird address | Connects |
+| Peer without that grant → VPS NetBird address | Blocked |
+| External client → VPS public address, TCP 5432 | Blocked |
+
+These checks passed for the tested IPv4 deployment: the backup host and actual Databasement worker connected; the other peer and public-IP probe still timed out. The upstream helper, NetBird policies, exit settings, saved UFW rules, and running services were unchanged.
+
+Reboot, Docker-restart, and UFW-reload persistence were configured through the hooks but have not been exercised live. A successful database backup and restore are separate checks. Test IPv6 independently if your service or overlay uses it.
+
+<a id="troubleshooting--maintenance" />
+
+## Troubleshooting and maintenance
+
+<a id="sso-stops-working" />
+
+### Public services or SSO fail
+
+Check the configured OIDC issuer, DNS, host listeners, and Docker forwarding rules together. In this deployment the issuer is served through the public HTTPS endpoint:
+
+```bash
+curl --fail --show-error --silent --max-time 10 \
   https://vpn.example.com/oauth2/.well-known/openid-configuration
+docker logs --tail 100 netbird-proxy
+docker logs --tail 100 netbird-traefik
 ```
 
-### Verify Public HTTPS
+Run discovery checks from the affected source where possible. An HTTP success from the host does not prove that a proxy container can reach the same endpoint. Host-input allowances can matter for host listeners and IPv6 paths, while Docker's IPv4 published ports normally use forwarding. Keep the established public rules and investigate the failing path before opening additional ports.
+
+<a id="docker-upgrade-connectivity-issues" />
+
+### A Docker update or container recreation changes access
+
+Use public-IP SSH or the provider console. Compare current container addresses and Docker DNAT targets with the UFW-Docker allowances, then refresh the affected public service with its `ufw-docker allow` command once it is running.
+
+The installed UFW-Docker service refreshes allowances with Docker's service lifecycle. It is not a continuous watcher for every individual container recreation. The NetBird hook itself contains no container IP addresses.
+
+After a NetBird update, repeat the mark inspection and all four access tests. Changing the base with `NB_FWMARK_BASE` also requires updating the hook's named mark value. This mark is an internal implementation detail, not a permanent public API.
+
+### Roll back the hook
+
+Use the backup directory saved during installation. Stop the hook **before** restoring the original file so the live exception is removed:
 
 ```bash
-curl -I https://vpn.example.com
+/etc/ufw/after.init stop
+cp -a "$backup_dir/after.init" /etc/ufw/after.init
+rm /etc/systemd/system/ufw-docker.service.d/netbird.conf
+systemctl daemon-reload
+iptables -S DOCKER-USER
 ```
 
-### Inspect Proxy Logs
+Remove only the drop-in created by this guide. Do not flush the firewall or restore the whole saved chain over unrelated changes. Verify that the tagged rule is absent and rerun fresh-connection tests. Removing the hook returns the original NetBird-to-container failure unless another correction is in place.
 
-```bash
-docker logs -f netbird-proxy
-```
+## References
 
-### Inspect Traefik Logs
-
-```bash
-docker logs -f traefik
-```
-
----
-
-# References
-
-- [UFW-Docker Project](https://github.com/chaifeng/ufw-docker)
-- [UFW-Docker Documentation](https://github.com/chaifeng/ufw-docker#installation)
-- [NetBird Self-Hosting Guide](https://docs.netbird.io/selfhosted/selfhosted-quickstart)
-- [NetBird Ports and Firewalls](https://docs.netbird.io/about-netbird/ports-and-firewalls)
-- [Docker DOCKER-USER Chain Documentation](https://docs.docker.com/engine/network/packet-filtering-firewalls/)
+- [UFW-Docker project and installation](https://github.com/chaifeng/ufw-docker)
+- [UFW-Docker maintainer guidance for VPN/container access](https://github.com/chaifeng/ufw-docker/issues/47)
+- [UFW customization hooks](https://manpages.debian.org/trixie/ufw/ufw-framework.8.en.html)
+- [Docker firewall chains and DNAT](https://docs.docker.com/engine/network/firewall-iptables/)
+- [NetBird ports and host firewalls](https://docs.netbird.io/about-netbird/ports-and-firewalls)
+- [NetBird's explanation of Docker peer-ACL marking](https://github.com/netbirdio/netbird/issues/4351)
+- [NetBird 0.83.1 mark definitions](https://github.com/netbirdio/netbird/blob/v0.83.1/client/net/fwmark.go)
+- [NetBird 0.83.1 prerouting and forwarding implementation](https://github.com/netbirdio/netbird/blob/v0.83.1/client/firewall/nftables/chains_linux.go)
