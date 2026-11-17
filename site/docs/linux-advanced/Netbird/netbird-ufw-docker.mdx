@@ -6,9 +6,9 @@ sidebar_position: 10
 
 # NetBird with UFW-Docker
 
-I use UFW-Docker to control public access to containers and NetBird policies to control access between peers. Both need to agree before a connection reaches a Docker service.
+Use UFW-Docker to control public access to containers and NetBird policies to control access between peers. This lets you publish the NetBird services that need internet access while keeping sensitive services available only to selected peers.
 
-This guide covers the public NetBird services, a forwarding problem that affected PostgreSQL backups, and the UFW hook that fixed it without changing the upstream `ufw-docker` script.
+This guide configures the public service allowances and a UFW hook that recognizes NetBird-authorized traffic to private Docker services. The upstream `ufw-docker` script stays unchanged.
 
 The hook covers the IPv4 NetBird path with the iptables-nft backend. Recheck the mark and firewall backend before applying it elsewhere or after an upgrade.
 
@@ -101,27 +101,36 @@ docker inspect --format '{{range $name, $net := .NetworkSettings.Networks}}{{$na
 
 UFW-Docker's allowances contain container IP addresses. After a container is recreated, refresh its allowance with the same `ufw-docker allow` command and check that it matches Docker's current DNAT destination. A container name in a rule comment does not make the address update automatically.
 
-## When NetBird says connected but the database times out
+## Keep sensitive services private
 
-My backup host could ping and SSH to the VPS over NetBird, but PostgreSQL connections timed out. The PostgreSQL container was healthy, and the NetBird policy allowed the backup peer to use TCP 5432.
+Choose which peers may access each private service, then create a NetBird policy for that access. For example, to restrict PostgreSQL on TCP 5432:
 
-The packet reached `wt0`, received NetBird's authorization mark, and was then dropped by UFW-Docker after Docker translated the destination to the database container. The kernel log showed:
+1. Put the permitted client peers in a source group.
+2. Put the peer hosting the container in a destination group.
+3. Create an allow policy between those groups for TCP 5432.
+4. Check other policies and routes for broader access to the same destination.
+
+Use the protocol and port for your own service. PostgreSQL is only the example used in the commands below. The container must already have a Docker-published port reachable through the host's NetBird address; the firewall hook does not publish ports.
+
+Keep private ports out of the public UFW-Docker allowances. For example, `ufw-docker allow netbird-db 5432/tcp` generates a `from any` allowance with this helper and can expose the published database port to the internet.
+
+### Pass NetBird-authorized traffic through UFW-Docker
+
+NetBird marks authorized traffic arriving on `wt0` for a local service before Docker translates the destination to the container. UFW-Docker also checks that forwarded traffic, so the mark-based hook lets it recognize NetBird's existing authorization.
+
+Without that integration, a packet accepted by NetBird can still reach a UFW-Docker drop rule. A corresponding kernel log entry looks like this:
 
 ```text
 [UFW DOCKER BLOCK] IN=wt0 OUT=br-... SRC=100.64.0.10 DST=172.30.0.7 ... DPT=5432 ... MARK=0x1bd20
 ```
 
-The addresses above are examples. The important fields are the incoming interface, destination port, and mark.
+The addresses are examples. The incoming interface, destination port, and mark identify the path. This is a direct connection to the host's NetBird address; Docker DNAT puts it on the forwarding path without requiring the client to use an exit node.
 
-This was a direct connection to the VPS's NetBird IP. Docker's translation put it on the host's forwarding path; the client did not need to select the VPS as its exit node.
-
-I also tested a blanket `ufw route allow in on wt0` rule. It restored the backup connection, but another peer without the PostgreSQL grant could connect too. On this host, an existing exit route allowed the otherwise-unmarked forwarded traffic. I removed that rule. The hook below instead recognizes the authorization NetBird already applied.
-
-Do not use a public `ufw-docker allow netbird-db 5432/tcp` rule to solve this problem. The tested helper generates a `from any` allowance, which would also admit public connections to the published database port.
+Avoid a blanket `ufw route allow in on wt0` exception when you need to preserve NetBird's service-level restrictions. It admits matching forwarded traffic without checking the authorization mark, including traffic permitted by broader routing rules. The hook below matches the mark for authorized local-service traffic instead.
 
 ## Find NetBird's authorization mark
 
-I identified the mark from the running firewall, then checked its meaning in the source for the installed NetBird version.
+Identify the mark from the running firewall, then confirm its meaning in the corresponding NetBird source. This connects the value used by the hook to the policy rules that set and accept it.
 
 Start with:
 
@@ -133,7 +142,7 @@ nft list chain ip netbird netbird-acl-input-rules
 nft list chain ip netbird netbird-acl-forward-filter
 ```
 
-On this nftables-backed installation, the first chain included a rule like this for the allowed backup peer:
+On an nftables-backed installation, look for a rule like this for an allowed peer and service:
 
 ```text
 iifname "wt0" ip saddr 100.64.0.10 tcp dport 5432 fib daddr type local meta mark set 0x0001bd20
@@ -141,7 +150,7 @@ iifname "wt0" ip saddr 100.64.0.10 tcp dport 5432 fib daddr type local meta mark
 
 Read it as: when this peer sends TCP 5432 traffic through `wt0` to a local address, set the packet mark before Docker changes the destination.
 
-Check that the peer ACL also grants the expected source and port. In `netbird-acl-input-rules`, the corresponding rule was:
+Check that the peer ACL also grants the expected source and port. In `netbird-acl-input-rules`, the corresponding rule should grant the same source and port:
 
 ```text
 ip saddr 100.64.0.10 tcp dport 5432 accept
@@ -149,7 +158,7 @@ ip saddr 100.64.0.10 tcp dport 5432 accept
 
 A mark value by itself is not evidence of permission; check the policy rule and its action too.
 
-The forward filter then included:
+The forward filter should also accept the mark before evaluating other forwarding rules:
 
 ```text
 meta mark 0x0001bd20 accept
@@ -317,18 +326,18 @@ Make fresh TCP connections from each relevant source. For example, with netcat a
 nc -vz -w 3 atlas.nb.example.net 5432
 ```
 
-Use the public IP instead of the NetBird hostname for the external test. A successful connection checks TCP reachability, not PostgreSQL credentials or backup correctness.
+Use the public IP instead of the NetBird hostname for the external test. A successful connection checks TCP reachability. Test application authentication and permissions separately.
 
 | Source and destination | Expected result |
 | --- | --- |
 | Peer allowed TCP 5432 → VPS NetBird address | Connects |
-| Actual backup worker/container → VPS NetBird address | Connects |
+| Actual application client/container → VPS NetBird address | Connects |
 | Peer without that grant → VPS NetBird address | Blocked |
 | External client → VPS public address, TCP 5432 | Blocked |
 
-These checks passed for the tested IPv4 deployment: the backup host and actual Databasement worker connected; the other peer and public-IP probe still timed out. The upstream helper, NetBird policies, exit settings, saved UFW rules, and running services were unchanged.
+Confirm all four results before relying on the configuration. Test from the actual application environment as well as the peer host, since containers can use different network paths.
 
-Reboot, Docker-restart, and UFW-reload persistence were configured through the hooks but have not been exercised live. A successful database backup and restore are separate checks. Test IPv6 independently if your service or overlay uses it.
+Repeat these checks after a planned reboot, Docker restart, or UFW reload to verify that the hook is reapplied. Test IPv6 independently if your service or overlay uses it.
 
 <a id="troubleshooting--maintenance" />
 
@@ -371,7 +380,7 @@ systemctl daemon-reload
 iptables -S DOCKER-USER
 ```
 
-Remove only the drop-in created by this guide. Do not flush the firewall or restore the whole saved chain over unrelated changes. Verify that the tagged rule is absent and rerun fresh-connection tests. Removing the hook returns the original NetBird-to-container failure unless another correction is in place.
+Remove only the drop-in created by this guide. Do not flush the firewall or restore the whole saved chain over unrelated changes. Verify that the tagged rule is absent and rerun fresh-connection tests. Removing the hook also removes the mark-based exception, so authorized NetBird connections to private containers may be blocked by UFW-Docker again.
 
 ## References
 
