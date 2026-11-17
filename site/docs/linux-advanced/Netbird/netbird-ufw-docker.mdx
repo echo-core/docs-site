@@ -10,7 +10,7 @@ I use UFW-Docker to control public access to containers and NetBird policies to 
 
 This guide covers the public NetBird services, a forwarding problem that affected PostgreSQL backups, and the UFW hook that fixed it without changing the upstream `ufw-docker` script.
 
-The hook was tested on Debian 13 with NetBird 0.83.1, Docker 29.9.3, and the iptables-nft backend on November 17, 2026. It covers the IPv4 NetBird path. Recheck the mark and firewall backend before applying it elsewhere or after an upgrade.
+The hook covers the IPv4 NetBird path with the iptables-nft backend. Recheck the mark and firewall backend before applying it elsewhere or after an upgrade.
 
 ## How the firewall layers fit together
 
@@ -47,6 +47,12 @@ ufw allow 22/tcp
 ufw allow 80/tcp
 ufw allow 443/tcp
 ufw allow 3478/udp
+```
+
+If you enable the optional fixed-port NetBird Proxy transport, also allow its port through UFW:
+
+```bash
+ufw allow 51820/udp
 ```
 
 If you use QUIC on UDP 443, retain that allowance too. A firewall rule alone does not create a listener or publish a Docker port. Host-input and Docker-forwarding rules cover different paths; inspect both, including IPv6, before removing an existing rule.
@@ -153,7 +159,7 @@ iifname "wt0" drop
 
 The matching `accept` confirms what the mark is used for. The leading zeroes are only formatting: `0x0001bd20` and `0x1bd20` are the same number.
 
-In NetBird 0.83.1, [`client/net/fwmark.go`](https://github.com/netbirdio/netbird/blob/v0.83.1/client/net/fwmark.go) names this value `PreroutingFwmarkRedirected`. Its default calculation is:
+NetBird's [`client/net/fwmark.go`](https://github.com/netbirdio/netbird/blob/v0.83.1/client/net/fwmark.go) names this value `PreroutingFwmarkRedirected`. Its default calculation is:
 
 ```text
 default base 0x1bd00 | redirected offset 0x20 = 0x1bd20
@@ -216,7 +222,7 @@ cat > "$backup_dir/after.init.new" <<'EOF'
 set -eu
 
 NETBIRD_INTERFACE=wt0
-# Observed in NetBird 0.83.1; recheck against its loaded rules after upgrades.
+# Recheck the mark against NetBird's loaded rules after upgrades.
 NETBIRD_AUTHORIZED_LOCAL_SERVICE_MARK=0x1bd20
 
 # UFW start/reload and the Docker lifecycle can invoke this concurrently.
@@ -375,5 +381,5 @@ Remove only the drop-in created by this guide. Do not flush the firewall or rest
 - [Docker firewall chains and DNAT](https://docs.docker.com/engine/network/firewall-iptables/)
 - [NetBird ports and host firewalls](https://docs.netbird.io/about-netbird/ports-and-firewalls)
 - [NetBird's explanation of Docker peer-ACL marking](https://github.com/netbirdio/netbird/issues/4351)
-- [NetBird 0.83.1 mark definitions](https://github.com/netbirdio/netbird/blob/v0.83.1/client/net/fwmark.go)
-- [NetBird 0.83.1 prerouting and forwarding implementation](https://github.com/netbirdio/netbird/blob/v0.83.1/client/firewall/nftables/chains_linux.go)
+- [NetBird mark definitions](https://github.com/netbirdio/netbird/blob/v0.83.1/client/net/fwmark.go)
+- [NetBird prerouting and forwarding implementation](https://github.com/netbirdio/netbird/blob/v0.83.1/client/firewall/nftables/chains_linux.go)
