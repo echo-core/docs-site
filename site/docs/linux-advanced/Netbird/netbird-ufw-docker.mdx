@@ -8,7 +8,7 @@ sidebar_position: 10
 
 Use UFW-Docker to control public access to containers and NetBird policies to control access between peers. This lets you publish the NetBird services that need internet access while keeping sensitive services available only to selected peers.
 
-This guide configures the public service allowances and a UFW hook that recognizes NetBird-authorized traffic to private Docker services. The upstream `ufw-docker` script stays unchanged.
+This guide configures the public service allowances and adds a hook to the UFW-Docker integration so it recognizes NetBird-authorized traffic to private Docker services.
 
 The hook covers the IPv4 NetBird path with the iptables-nft backend. Recheck the mark and firewall backend before applying it elsewhere or after an upgrade.
 
@@ -30,7 +30,16 @@ Run the server commands below as root. Use the VPS's public-IP SSH connection or
 
 ## Allow the public NetBird services
 
-These names match my Compose deployment. Replace the container and Docker network names if yours differ.
+Container names vary with the installation method and Compose configuration. I customized this stack by prefixing every container name with `netbird-`, so the examples use names such as `netbird-server`, `netbird-proxy`, and `netbird-traefik`. Your installation may use different names.
+
+Check the actual container and network names before copying the rules:
+
+```bash
+docker ps --format 'table {{.Names}}\t{{.Ports}}'
+docker network ls
+```
+
+Replace the example container names and `netbird_netbird` network with the names from your installation.
 
 | Port | Service | Exposure |
 | --- | --- | --- |
@@ -49,11 +58,13 @@ ufw allow 443/tcp
 ufw allow 3478/udp
 ```
 
-If you enable the optional fixed-port NetBird Proxy transport, also allow its port through UFW:
+If the optional fixed-port NetBird Proxy transport is served by a host listener, allow that host-input path through UFW:
 
 ```bash
 ufw allow 51820/udp
 ```
+
+For a Docker-published IPv4 port, use the UFW-Docker forwarding allowance shown below. A host-input rule is a separate allowance and does not replace it.
 
 If you use QUIC on UDP 443, retain that allowance too. A firewall rule alone does not create a listener or publish a Docker port. Host-input and Docker-forwarding rules cover different paths; inspect both, including IPv6, before removing an existing rule.
 
@@ -121,7 +132,7 @@ NetBird marks authorized traffic arriving on `wt0` for a local service before Do
 Without that integration, a packet accepted by NetBird can still reach a UFW-Docker drop rule. A corresponding kernel log entry looks like this:
 
 ```text
-[UFW DOCKER BLOCK] IN=wt0 OUT=br-... SRC=100.64.0.10 DST=172.30.0.7 ... DPT=5432 ... MARK=0x1bd20
+[UFW DOCKER BLOCK] IN=wt0 OUT=br-... SRC=100.64.0.10 DST=172.20.0.10 ... DPT=5432 ... MARK=0x1bd20
 ```
 
 The addresses are examples. The incoming interface, destination port, and mark identify the path. This is a direct connection to the host's NetBird address; Docker DNAT puts it on the forwarding path without requiring the client to use an exit node.
@@ -182,9 +193,9 @@ The [`queuePreroutingRule` and `addFwmarkToForward` functions](https://github.co
 This is a **packet mark** (`meta mark`, matched by iptables `-m mark`). It is different from a connection mark (`ct mark`) and from NetBird's masquerade marks. The hook reads it; it never assigns authorization marks itself.
 :::
 
-## Add the UFW hook
+## Add the UFW-Docker integration hook
 
-UFW supports an executable `/etc/ufw/after.init` customization hook. Keeping the exception there leaves the upstream `ufw-docker` script unchanged. A small systemd drop-in calls the same hook after the existing Docker/UFW-Docker startup sequence.
+Add the NetBird exception through UFW's executable `/etc/ufw/after.init` hook, then connect it to `ufw-docker.service` with a systemd drop-in. UFW calls the hook during its lifecycle, and the drop-in calls it after UFW-Docker refreshes the forwarding rules.
 
 First inspect the existing files. If `after.init` already contains custom logic, merge this change instead of replacing it. The installation below assumes the stock placeholder hook and no existing `netbird.conf` drop-in.
 
@@ -323,7 +334,7 @@ There should be exactly one rule commented `NetBird-authorized local service`, b
 Make fresh TCP connections from each relevant source. For example, with netcat available:
 
 ```bash
-nc -vz -w 3 atlas.nb.example.net 5432
+nc -vz -w 3 server.nb.example.com 5432
 ```
 
 Use the public IP instead of the NetBird hostname for the external test. A successful connection checks TCP reachability. Test application authentication and permissions separately.
@@ -351,7 +362,7 @@ Check the configured OIDC issuer, DNS, host listeners, and Docker forwarding rul
 
 ```bash
 curl --fail --show-error --silent --max-time 10 \
-  https://vpn.example.com/oauth2/.well-known/openid-configuration
+  https://netbird.example.com/oauth2/.well-known/openid-configuration
 docker logs --tail 100 netbird-proxy
 docker logs --tail 100 netbird-traefik
 ```
