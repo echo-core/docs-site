@@ -10,7 +10,15 @@ Use UFW-Docker to control public access to containers and NetBird policies to co
 
 This guide configures the public service allowances and adds a hook to the UFW-Docker integration so it recognizes NetBird-authorized traffic to private Docker services.
 
-The hook covers the IPv4 NetBird path with the iptables-nft backend. Recheck the mark and firewall backend before applying it elsewhere or after an upgrade.
+## Before you start
+
+This guide assumes:
+
+- A Linux host using UFW and systemd.
+- Docker bridge networking with the iptables-nft backend and a `DOCKER-USER` chain.
+- NetBird installed on the host, using the `wt0` interface.
+
+The hook covers the IPv4 NetBird path. Recheck the mark and firewall backend before applying it elsewhere or after an upgrade.
 
 ## How the firewall layers fit together
 
@@ -24,7 +32,7 @@ Docker usually rewrites an incoming published-port connection to the container's
 
 UFW-Docker places its checks in `DOCKER-USER`, ahead of Docker's forwarding rules. [Docker documents this ordering](https://docs.docker.com/engine/network/firewall-iptables/).
 
-Run the server commands below as root. Use the VPS's public-IP SSH connection or provider console when changing its firewall. A `tmux` session preserves a shell, but it does not provide another network path if NetBird stops working.
+Run the host commands below as root. Keep an independent management connection or console available when changing the firewall. A `tmux` session preserves a shell, but it does not provide another network path if NetBird stops working.
 
 <a id="configure-host-firewall-rules" />
 
@@ -43,15 +51,12 @@ Replace the example container names and `netbird_netbird` network with the names
 
 | Port | Service | Exposure |
 | --- | --- | --- |
-| 22/tcp | Host SSH | Optional administrative access |
 | 80/tcp and 443/tcp | Traefik | Public dashboard, API, relay and HTTPS ingress |
 | 3478/udp | NetBird server | Public STUN |
-| 5432/tcp | PostgreSQL | Selected NetBird peers only |
 
 This setup assumes UFW is already enabled. Keep the host allowances used by your deployment:
 
 ```bash
-ufw allow 22/tcp
 ufw allow 80/tcp
 ufw allow 443/tcp
 ufw allow 3478/udp
@@ -61,18 +66,16 @@ If you use QUIC on UDP 443, retain that allowance too. A firewall rule alone doe
 
 ### Install UFW-Docker
 
-Skip this step if it is already installed. This is the upstream script revision used for the tested setup; review upstream changes before choosing another revision.
+If UFW-Docker is not installed, follow the project's [installation instructions](https://github.com/chaifeng/ufw-docker#install) to install the helper and its UFW integration.
+
+During initial setup, install its systemd service and load the UFW rules:
 
 ```bash
-wget -O /usr/local/bin/ufw-docker \
-  https://raw.githubusercontent.com/chaifeng/ufw-docker/020a8699f95592561f254d8d4ad1bb40d401dfc7/ufw-docker
-chmod 0755 /usr/local/bin/ufw-docker
-ufw-docker install
 ufw-docker install-service
 ufw reload
 ```
 
-The final reload is for this initial installation. Adding the NetBird hook later does not require another global reload.
+Skip this setup if the helper and service are already installed. Adding the NetBird hook later does not require another global reload.
 
 <a id="configure-docker-forwarding-rules" />
 
@@ -84,14 +87,6 @@ ufw-docker allow netbird-traefik 443/tcp netbird_netbird
 ufw-docker allow netbird-server 3478/udp netbird_netbird
 ```
 
-If NetBird Proxy is configured for fixed-port direct transport, also allow its published port:
-
-```bash
-ufw-docker allow netbird-proxy 51820/udp netbird_netbird
-```
-
-That optional path requires a matching Docker UDP publication, a listener configured with `NB_PROXY_WG_PORT=51820`, and the appropriate `NB_PROXY_EXTERNAL_IP_MAP`. Opening the firewall alone is not enough.
-
 Check the effective rules and container addresses:
 
 ```bash
@@ -102,6 +97,16 @@ docker inspect --format '{{range $name, $net := .NetworkSettings.Networks}}{{$na
 ```
 
 UFW-Docker's allowances contain container IP addresses. After a container is recreated, refresh its allowance with the same `ufw-docker allow` command and check that it matches Docker's current DNAT destination. A container name in a rule comment does not make the address update automatically.
+
+### Optional: NetBird Proxy direct transport
+
+Skip this section if you do not use the proxy's fixed-port direct transport. If you enable it, allow the proxy's published UDP port:
+
+```bash
+ufw-docker allow netbird-proxy 51820/udp netbird_netbird
+```
+
+This example uses `NB_PROXY_WG_PORT=51820`. Publish the same UDP port in Docker and configure `NB_PROXY_EXTERNAL_IP_MAP` with the host's public address. Use the port configured for your installation if it differs. See NetBird's [proxy P2P configuration](https://docs.netbird.io/selfhosted/migration/enable-reverse-proxy#enabling-peer-to-peer-connectivity) for the complete setup. Opening the firewall alone is not enough.
 
 ## Keep sensitive services private
 
@@ -332,10 +337,10 @@ Use the public IP instead of the NetBird hostname for the external test. A succe
 
 | Source and destination | Expected result |
 | --- | --- |
-| Peer allowed TCP 5432 → VPS NetBird address | Connects |
-| Actual application client/container → VPS NetBird address | Connects |
-| Peer without that grant → VPS NetBird address | Blocked |
-| External client → VPS public address, TCP 5432 | Blocked |
+| Peer allowed TCP 5432 → host NetBird address | Connects |
+| Actual application client/container → host NetBird address | Connects |
+| Peer without that grant → host NetBird address | Blocked |
+| External client → host public address, TCP 5432 | Blocked |
 
 Confirm all four results before relying on the configuration. Test from the actual application environment as well as the peer host, since containers can use different network paths.
 
@@ -349,11 +354,11 @@ Repeat these checks after a planned reboot, Docker restart, or UFW reload to ver
 
 ### Public services or SSO fail
 
-Check the configured OIDC issuer, DNS, host listeners, and Docker forwarding rules together. In this deployment the issuer is served through the public HTTPS endpoint:
+Check the configured OIDC issuer, DNS, host listeners, and Docker forwarding rules together. Use the discovery URL configured for your identity provider, including any provider-specific path. Replace the example URL below:
 
 ```bash
-curl --fail --show-error --silent --max-time 10 \
-  https://netbird.example.com/oauth2/.well-known/openid-configuration
+OIDC_DISCOVERY_URL='https://idp.example.com/.well-known/openid-configuration'
+curl --fail --show-error --silent --max-time 10 "$OIDC_DISCOVERY_URL"
 docker logs --tail 100 netbird-proxy
 docker logs --tail 100 netbird-traefik
 ```
@@ -364,7 +369,7 @@ Run discovery checks from the affected source where possible. An HTTP success fr
 
 ### A Docker update or container recreation changes access
 
-Use public-IP SSH or the provider console. Compare current container addresses and Docker DNAT targets with the UFW-Docker allowances, then refresh the affected public service with its `ufw-docker allow` command once it is running.
+Use an independent management connection or console. Compare current container addresses and Docker DNAT targets with the UFW-Docker allowances, then refresh the affected public service with its `ufw-docker allow` command once it is running.
 
 The installed UFW-Docker service refreshes allowances with Docker's service lifecycle. It is not a continuous watcher for every individual container recreation. The NetBird hook itself contains no container IP addresses.
 
