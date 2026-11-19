@@ -1,0 +1,74 @@
+---
+sidebar_position: 1
+---
+# Upgrading PostgreSQL in Docker
+
+This is the dump-and-restore process I used to move from PostgreSQL 16 to 17. My cluster held several applications, including Immich and Vaultwarden, so I wanted to back up the whole cluster, including its roles, and keep the old data directory available while I tested the new one.
+
+## Prerequisites
+
+- A working Docker Compose deployment using the official `postgres:16` image. The examples use a service named `postgres` and a bind mount such as `${DB_PATH}/pg16`.
+- Superuser access to the old cluster, space for a dump and a fresh cluster, and a maintenance window. Shut down applications and jobs that write to the database before dumping. Keep them stopped through the restore and verification.
+- Compare locales, extensions, tablespaces, custom settings, and any external backup or replication configuration. Install compatible extension binaries in the new image and prepare any tablespace paths before restoring. Practice on a copy first.
+
+:::warning
+Keep a separate backup of the old data and Compose configuration. A cluster dump contains application data and can contain role password hashes. Keep it private.
+:::
+
+## Backup databases
+
+From the Compose directory, run this while the old database is still up. It writes to the host, so you don't have to recreate the old container to add a backup mount.
+
+```bash
+(
+  set -eu
+  umask 077
+  docker compose exec -T postgres sh -c 'exec pg_dumpall -U "$POSTGRES_USER"' > pg16-all.sql.partial
+  test -s pg16-all.sql.partial
+  mv pg16-all.sql.partial pg16-all.sql
+)
+```
+
+Use the old cluster's actual superuser if it differs from `POSTGRES_USER`. Use the new major version's dump client if available. PostgreSQL supports loading this logical dump into a newer major release, but you still need to check your data and extensions there.
+
+## Upgrade `postgres` to `17`
+
+1. Stop just the database service with `docker compose stop postgres`. Save the old Compose configuration and keep its data directory.
+2. Change the image tag to `postgres:17` and set the source of its data mount to a new, empty directory. The container mount is still `/var/lib/postgresql/data` for 17. The official PostgreSQL 18+ image uses a different layout with the volume mounted at `/var/lib/postgresql`.
+3. Use a protected environment file to initialize the new cluster. Set `POSTGRES_USER=upgrade_admin` (a new role absent from the dump), `POSTGRES_DB=postgres`, and a strong `POSTGRES_PASSWORD`. Using a distinct bootstrap superuser lets the dump recreate the original roles while restore stops on unexpected errors. Temporarily disable any initialization scripts that would precreate objects in the dump.
+4. Pull and start only the database. If you use a locally built image for extensions, build the matching 17 image instead.
+
+```bash
+docker compose pull postgres
+docker compose up -d --no-deps postgres
+docker compose logs --tail=100 postgres
+```
+
+Wait for initialization to finish and confirm that PostgreSQL is ready to accept connections. The image's initialization variables are only applied with an empty data directory.
+
+## Import databases
+
+```bash
+docker compose exec -T postgres sh -c \
+  'exec psql -X --set=ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres' \
+  < pg16-all.sql
+```
+
+Check the exit status. If the restore fails, diagnose the error and start the retry with another empty PostgreSQL 17 data directory. A partial restore can leave roles, databases, and tables behind.
+
+## Verify databases
+
+```bash
+docker compose exec -T postgres sh -c 'psql -X -U "$POSTGRES_USER" -d postgres -c "SHOW server_version" -c "\\l" -c "\\du"'
+docker compose exec -T postgres sh -c 'vacuumdb -U "$POSTGRES_USER" --all --analyze-in-stages'
+```
+
+Compare database names, owners, extensions, and a few application table counts with the old cluster. My restore included separate databases for Authentik, Immich, Joplin, Mealie, and Vaultwarden. Verify application login and a representative query with each application's own credentials before returning the stack to service. PostgreSQL recommends rebuilding planner statistics after a logical restore.
+
+If you need to roll back before reopening writes, stop 17, restore the old Compose configuration, and start 16 with the original `pg16` directory. Once applications have written to 17, switching back to 16 would leave those changes behind.
+
+## References
+
+- [PostgreSQL 17 upgrade and dump/restore guidance](https://www.postgresql.org/docs/17/upgrading.html)
+- [PostgreSQL 17 pg_dumpall behavior and bootstrap roles](https://www.postgresql.org/docs/17/app-pg-dumpall.html)
+- [Official PostgreSQL container image, initialization and data mounts](https://hub.docker.com/_/postgres)

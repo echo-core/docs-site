@@ -1,16 +1,23 @@
 ---
-title: Migrate NetBird SQLite Databases to PostgreSQL
+slug: /linux-advanced/Netbird/netbird-sqlite-to-postgresql
 description: Migrate NetBird store.db, idp.db, and events.db to PostgreSQL with pgloader.
 sidebar_position: 1
 ---
 
 # Migrate NetBird SQLite Databases to PostgreSQL
 
-This guide documents a working migration of NetBird's SQLite databases to PostgreSQL 18:
+This is how I moved the three SQLite stores in my combined NetBird deployment to PostgreSQL 18. I used pgloader because I needed to carry over existing management data, embedded identity data, and activity history:
 
 - `store.db` -> `netbird_store`
 - `idp.db` -> `netbird_auth`
 - `events.db` -> `netbird_events`
+
+## Prerequisites
+
+- A combined NetBird Docker Compose deployment with a `netbird-server` service. The example uses `./data` for the bind mount at `/var/lib/netbird`. For a named volume, use NetBird's backup procedure to export the stopped service's data instead of copying `./data`.
+- Keep the same NetBird image version for the migration and verify which stores your deployment uses. The auth migration applies to the embedded IdP. Skip an optional store if your setup doesn't use it.
+- Install `pgloader`, `sqlite3`, and a PostgreSQL client where you will run the import. The CAST lists below are the ones I needed. Compare them with your copied SQLite schema and the upstream migration guide for your release.
+- Schedule downtime. Keep the backup, .load files, and database credentials private. The pgloader statements include `include drop` and belong on newly created, dedicated target databases.
 
 :::danger[Back up first]
 Stop NetBird and preserve the entire data directory, configuration, and encryption key before modifying either database.
@@ -19,12 +26,19 @@ Stop NetBird and preserve the entire data directory, configuration, and encrypti
 ## 1. Stop NetBird and create a backup
 
 ```bash
-docker compose stop netbird-server
-mkdir -p backup
-cp -a data/. backup/
+(
+  set -eu
+  umask 077
+  docker compose stop netbird-server
+  mkdir backup
+  mkdir backup/data backup/migration
+  cp -a data/. backup/data/
+  cp -a backup/data/. backup/migration/
+  cp -a config.yaml docker-compose.yml backup/
+)
 ```
 
-Keep the original SQLite files until the PostgreSQL deployment has been fully tested.
+Use a fresh backup directory. Adapt the Compose filename and copy any environment and proxy files needed for rollback. Keep `backup/data` unchanged and use `backup/migration` as the working copy. Retain the complete backup until you've verified the PostgreSQL deployment and its backups.
 
 ## 2. PostgreSQL Compose configuration
 
@@ -38,7 +52,6 @@ services:
     restart: unless-stopped
     networks: [netbird]
     ports:
-      - "<netbird-vps-ip>:5432:5432"
       - "127.0.0.1:5432:5432"
     env_file:
       - ./postgres.env
@@ -52,14 +65,12 @@ services:
       timeout: 5s
 ```
 
-Add the following `depends_on` directive to your `netbird-server` to make sure postgres is started and healthy before the server.
+Under the existing `services.netbird-server` settings, add the dependency to wait for PostgreSQL to become healthy. Keep any other services already listed in `depends_on`.
 
-```
-  netbird-server:
-  ...
-    depends_on:
-      netbird-db:
-        condition: service_healthy
+```yaml
+depends_on:
+  netbird-db:
+    condition: service_healthy
 ```
 
 Example `postgres.env`:
@@ -70,22 +81,27 @@ POSTGRES_PASSWORD=REPLACE_WITH_A_STRONG_PASSWORD
 POSTGRES_DB=postgres
 ```
 
-The `start_period` is a grace period during startup. The `interval` controls how often Docker runs the healthcheck.
+The loopback mapping is for pgloader running on the Docker host. Remove it after the import if no host-side client needs it. NetBird connects to `netbird-db:5432` over the shared Compose network. If PostgreSQL is on another host, use a private reachable address, restrict access to the necessary clients, and configure PostgreSQL TLS rather than carrying over the example's `sslmode=disable`.
 
 ## 3. Create the PostgreSQL databases
 
+Bring up the database without restarting NetBird. Wait for it to become healthy. Create the role using psql's password prompt so you don't put the password in the shell command.
+
 ```bash
-docker compose exec netbird-db psql -U admin -d postgres \
-  -c "CREATE ROLE netbird LOGIN PASSWORD 'REPLACE_WITH_A_STRONG_PASSWORD';"
+docker compose up -d netbird-db
+docker compose ps netbird-db
+docker compose exec netbird-db psql -U admin -d postgres
+```
 
-docker compose exec netbird-db psql -U admin -d postgres \
-  -c "CREATE DATABASE netbird_store OWNER netbird;"
+At the psql prompt:
 
-docker compose exec netbird-db psql -U admin -d postgres \
-  -c "CREATE DATABASE netbird_auth OWNER netbird;"
-
-docker compose exec netbird-db psql -U admin -d postgres \
-  -c "CREATE DATABASE netbird_events OWNER netbird;"
+```sql
+CREATE ROLE netbird LOGIN;
+\password netbird
+CREATE DATABASE netbird_store OWNER netbird;
+CREATE DATABASE netbird_auth OWNER netbird;
+CREATE DATABASE netbird_events OWNER netbird;
+\q
 ```
 
 ## 4. Create the custom pgloader JSON transform
@@ -106,12 +122,12 @@ Load this file with pgloader's `-l` / `--load-lisp-file` option.
 
 ## 5. Migrate `store.db`
 
-Create `sqlite.load`:
+Create `sqlite.load` with mode `0600`. Replace the example source path in each load file with your working copy and percent-encode special characters in the password part of the PostgreSQL URI.
 
 ```lisp
 LOAD DATABASE
-    FROM sqlite:///root/compose/netbird/backup/store.db
-    INTO postgresql://netbird:REPLACE_PASSWORD@localhost:5432/netbird_store
+    FROM sqlite:///root/compose/netbird/backup/migration/store.db
+    INTO postgresql://netbird:REPLACE_PASSWORD@127.0.0.1:5432/netbird_store
 
 WITH include drop, create tables, create indexes, reset sequences
 
@@ -143,7 +159,7 @@ pgloader -l ./transforms.lisp ./sqlite.load
 ```
 
 :::note[CAST syntax]
-Separate CAST rules with commas, but do not put a trailing comma after the final rule.
+Separate CAST rules with commas and leave the final rule without one. Recent upstream instructions include `accounts.settings_peer_hostname_collision_rejected`. If your copy has that column, add a boolean cast for it too. Check your actual schema before adding or removing casts.
 :::
 
 ## 6. Resolve orphaned target records
@@ -151,7 +167,7 @@ Separate CAST rules with commas, but do not put a trailing comma after the final
 If PostgreSQL refuses to create `targets_service_id_fkey`, locate orphaned rows:
 
 ```bash
-sqlite3 /root/compose/netbird/backup/store.db "
+sqlite3 /root/compose/netbird/backup/migration/store.db "
 SELECT t.id, t.service_id
 FROM targets t
 LEFT JOIN services s ON s.id = t.service_id
@@ -160,10 +176,10 @@ WHERE t.service_id IS NOT NULL
 "
 ```
 
-If the returned targets are confirmed obsolete, remove them from the migration copy. Modify the `id`'s to the one's matching your install:
+If the returned targets are confirmed obsolete, remove them from the migration copy. The IDs below came from my setup. Use only the rows you confirmed are obsolete in your own migration copy.
 
 ```bash
-sqlite3 /root/compose/netbird/backup/store.db "
+sqlite3 /root/compose/netbird/backup/migration/store.db "
 DELETE FROM targets
 WHERE id IN (15,16,26,27);
 "
@@ -177,12 +193,12 @@ Do not delete orphaned records blindly. Restore missing `services` rows or updat
 
 ## 7. Migrate `idp.db`
 
-Create `auth-sqlite.load`:
+For an embedded IdP, create `auth-sqlite.load` with the same file permissions as `sqlite.load`.
 
 ```lisp
 LOAD DATABASE
-    FROM sqlite:///root/compose/netbird/backup/idp.db
-    INTO postgresql://netbird:REPLACE_PASSWORD@localhost:5432/netbird_auth
+    FROM sqlite:///root/compose/netbird/backup/migration/idp.db
+    INTO postgresql://netbird:REPLACE_PASSWORD@127.0.0.1:5432/netbird_auth
 
 WITH include drop, create tables, create indexes, reset sequences
 
@@ -210,11 +226,12 @@ pgloader ./auth-sqlite.load
 
 Migrate the activity database into the PostgreSQL database selected for activity events:
 
-Create the `activity-sqlite.load`:
+Create `activity-sqlite.load` with the same file permissions.
+
 ```lisp
 LOAD DATABASE
-     FROM sqlite:///root/compose/netbird/backup/events.db
-     INTO postgresql://netbird:REPLACE_PASSWORD@localhost:5432/netbird_events
+     FROM sqlite:///root/compose/netbird/backup/migration/events.db
+     INTO postgresql://netbird:REPLACE_PASSWORD@127.0.0.1:5432/netbird_events
 
 WITH include drop, create tables, create indexes, reset sequences
 ;
@@ -236,11 +253,11 @@ server:
     encryptionKey: "REPLACE_WITH_EXISTING_KEY"
 ```
 
-Do not replace the old key unless it is irretrievable. A different key can prevent NetBird from reading previously encrypted fields.
+If you can't recover the old key, stop the migration and investigate. A new key can't decrypt the fields already stored in the database.
 
 ## 10. Configure NetBird for PostgreSQL
 
-Example management-store configuration:
+Merge the store settings into the existing `server` block of `config.yaml`. Keep `store.encryptionKey` and other settings already in that block. The examples show the management, auth, and activity sections separately.
 
 ```yaml
 server:
@@ -258,7 +275,7 @@ server:
     dsn: "host=netbird-db port=5432 user=netbird password=REPLACE_PASSWORD dbname=netbird_auth sslmode=disable"
 ```
 
-Example auth-store configuration:
+Example activity-store configuration:
 
 ```yaml
 server:
@@ -269,17 +286,17 @@ server:
 
 ## 11. Verify the migration
 
-A successful pgloader summary should show:
+Review the pgloader summaries, check rejected rows, and compare table counts across each source and destination before starting NetBird. A successful import should show:
 
 - Zero table-copy errors
 - `Create Foreign Keys` with zero errors
-- Successful import of the `jobs` row
+- Matching counts in `jobs`, including rows using the JSON transform, if that table exists
 - The expected number of valid `targets`
 
 Start NetBird:
 
 ```bash
-docker compose start netbird-server
+docker compose up -d netbird-server
 docker compose logs --tail=200 netbird-server
 ```
 
@@ -299,14 +316,14 @@ using postgres as activity event store engine
 Also verify:
 
 1. Dashboard login works.
-2. Existing users and peers appear.
+2. Existing users, peers, groups, and policies appear. Connect from a known existing peer.
 3. Audit events load correctly.
 4. No encryption-key warning appears.
 5. `docker compose ps` reports `netbird-db` as healthy.
 
 ## 12. Archive the legacy SQLite files
 
-Retain the archived files in `./backup/` until tested PostgreSQL backups are available.
+Keep the untouched backup until tested PostgreSQL backups are available. If the checks fail, stop NetBird, restore the old settings and the untouched SQLite files, then restart with the original image version and verify login and peer access. Writes made after the PostgreSQL cutover will need to be accounted for before rollback.
 
 Keep the GeoLite and Geonames data files in place in the `./data/` directory:
 
@@ -322,4 +339,7 @@ geonames_*.db
 - [NetBird: Activity Events PostgreSQL store](https://docs.netbird.io/selfhosted/maintenance/activity-postgres-store)
 - [NetBird: Back up a self-hosted installation](https://docs.netbird.io/selfhosted/maintenance/backup)
 - [Docker: Control startup and shutdown order in Compose](https://docs.docker.com/compose/how-tos/startup-order/)
-- [PostgreSQL: DROP DATABASE](https://www.postgresql.org/docs/current/sql-dropdatabase.html)
+- [NetBird combined-server configuration example](https://github.com/netbirdio/netbird/blob/main/combined/config.yaml.example)
+- [pgloader SQLite migration options](https://pgloader.readthedocs.io/en/latest/ref/sqlite.html)
+- [PostgreSQL connection URI syntax](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS)
+- [Official PostgreSQL container mount layout](https://hub.docker.com/_/postgres)

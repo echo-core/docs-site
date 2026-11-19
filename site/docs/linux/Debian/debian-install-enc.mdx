@@ -1,0 +1,406 @@
+---
+slug: /linux-advanced/Debian/debian-install-enc
+sidebar_position: 1
+---
+# Debian Full Disk Encryption Installation
+
+This took quite a bit of research and trial and error before I got it working. I use Debian Sid because I want newer packages and know that Sid can break. I wanted a way to roll back the system without rolling back my home directory. Eventually I'd like to do a `debootstrap` install to avoid some of the installer detours here.
+
+This layout keeps both the Btrfs root and `/boot` inside LUKS2. The EFI System Partition stays outside LUKS so the firmware can read it. The GRUB builds covered here need a PBKDF2 keyslot to unlock LUKS2. I use separate Btrfs subvolumes for home, snapshots, and some frequently changing system data.
+
+## Prerequisites
+
+- A fresh Debian install on a UEFI x86-64 machine with a target disk you can erase. The example uses a Debian 13 (Trixie) or Sid installer and a GPT disk named `/dev/vda`.
+- In the commands, `/dev/vda1` is the EFI System Partition, `/dev/vda2` is the LUKS partition, and `/dev/mapper/vda2_crypt` is the unlocked Btrfs device. Check your actual devices and mapper name in the installer shell before substituting them.
+- Have a bootable rescue image and a separate backup. Try the installer workflow and rollback on a disposable VM before doing this on your system. The installer detours below describe the layout I used.
+
+:::warning
+Make sure to keep backups anyway, because you never know. Snapshots live on the same disk. Converting the boot keyslot from Argon2id to PBKDF2 trades memory-hard password hashing for GRUB compatibility, so use a strong passphrase.
+:::
+
+## Install Debian
+
+:::tip
+You can grab the latest stable Debian `netinst` iso from **_[here](https://www.debian.org/distrib/netinst)_**.
+
+You can grab the latest unstable Debian `mini` iso from **_[here](https://d-i.debian.org/daily-images/)_**.
+:::
+
+1. Boot the installer in UEFI mode and select **Advanced options → Expert install**.
+2. In **Partition disks**, choose manual partitioning on the target GPT disk.
+    - Create a 512 MiB EFI System Partition mounted at `/boot/efi`.
+    - Configure the remaining partition as an encrypted volume. Set a passphrase for LUKS2.
+    - Format the unlocked volume as Btrfs and assign it to `/`. Leave `/boot` inside this filesystem.
+    - Finish partitioning and write the changes. Pause before installing the base system.
+3. Switch to an installer shell with **Ctrl+Alt+F3**. Check `mount`, the mapper name, and the generated files in `/target/etc` before changing them.
+
+4. Unmount Debian's current BTRFS `@rootfs` volume from `/target`.
+
+```bash
+umount /target/boot/efi
+umount /target
+```
+
+5. Check the LUKS keyslots. In this fresh install slot 0 is the boot passphrase. If it uses Argon2id and GRUB needs PBKDF2, target that slot explicitly. Use your actual boot slot if it differs.
+
+```bash
+cryptsetup luksDump /dev/vda2
+cryptsetup luksConvertKey --key-slot 0 --pbkdf pbkdf2 /dev/vda2
+cryptsetup luksDump /dev/vda2
+```
+
+:::tip
+Verify that the boot slot reports `PBKDF: pbkdf2` after conversion. Keep a GRUB-compatible passphrase slot as long as this GRUB build needs one.
+:::
+
+6. Mount the Btrfs top level. Check that `/mnt/@rootfs/etc` contains the installer's `fstab` and `crypttab` before continuing.
+
+```bash
+mount -o subvolid=5 /dev/mapper/vda2_crypt /mnt
+```
+
+7. Configure BTRFS subvolumes.
+
+```bash
+cd /mnt
+```
+
+Create the sibling subvolumes. I keep `/var/log`, some container and VM data, and the GRUB modules outside the system snapshot along with `/home`.
+
+```bash
+btrfs sub cr @
+btrfs sub cr @grub
+btrfs sub cr @home
+btrfs sub cr @root
+btrfs sub cr @snapshots
+btrfs sub cr @srv
+btrfs sub cr @var_cache
+btrfs sub cr @var_containers
+btrfs sub cr @var_libvirt
+btrfs sub cr @var_log
+btrfs sub cr @var_tmp
+```
+
+8. Mount root BTRFS subvolume.
+
+```bash
+mount -o subvol=@ /dev/mapper/vda2_crypt /target
+```
+
+9. Create needed directories, modify as needed.
+
+```bash
+mkdir -p /target/boot/efi
+mkdir -p /target/boot/grub/x86_64-efi
+mkdir -p /target/etc
+mkdir /target/.snapshots
+mkdir /target/home
+mkdir /target/root
+mkdir /target/srv
+mkdir -p /target/var/cache
+mkdir -p /target/var/lib/containers
+mkdir -p /target/var/lib/libvirt/images
+mkdir -p /target/var/log
+mkdir -p /target/var/tmp
+```
+
+10. Mount BTRFS subvolumes and efi partition to `/target` directories.
+
+```bash
+mount -o subvol=@grub /dev/mapper/vda2_crypt /target/boot/grub/x86_64-efi
+mount -o subvol=@home /dev/mapper/vda2_crypt /target/home
+mount -o subvol=@snapshots /dev/mapper/vda2_crypt /target/.snapshots
+mount -o subvol=@root /dev/mapper/vda2_crypt /target/root
+mount -o subvol=@srv /dev/mapper/vda2_crypt /target/srv
+mount -o subvol=@var_cache /dev/mapper/vda2_crypt /target/var/cache
+mount -o subvol=@var_containers /dev/mapper/vda2_crypt /target/var/lib/containers
+mount -o subvol=@var_libvirt /dev/mapper/vda2_crypt /target/var/lib/libvirt/images
+mount -o subvol=@var_log /dev/mapper/vda2_crypt /target/var/log
+mount -o subvol=@var_tmp /dev/mapper/vda2_crypt /target/var/tmp
+mount /dev/vda1 /target/boot/efi
+```
+
+11. If you want to disable copy-on-write for new libvirt images, set the attribute on the empty, already mounted images subvolume. The attribute also disables data checksums and compression for new files there. Btrfs mount options such as `nodatacow` apply to the filesystem as a whole.
+
+```bash
+chattr +C /target/var/lib/libvirt/images
+```
+
+12. Copy the installer-generated `fstab` and `crypttab` to the new root.
+
+```bash
+cp /mnt/@rootfs/etc/fstab /mnt/@rootfs/etc/crypttab /target/etc/
+```
+
+13. Edit `/target/etc/fstab`. Keep the installer's EFI UUID entry and any other applicable non-Btrfs entries. Replace the old `@rootfs` entry with the new layout. Use the same mapper source on each Btrfs line.
+
+```fstab
+/dev/mapper/vda2_crypt /                         btrfs defaults,noatime,compress=zstd,subvol=@ 0 0
+/dev/mapper/vda2_crypt /.snapshots               btrfs defaults,noatime,subvol=@snapshots      0 0
+/dev/mapper/vda2_crypt /boot/grub/x86_64-efi      btrfs defaults,noatime,subvol=@grub           0 0
+/dev/mapper/vda2_crypt /home                     btrfs defaults,noatime,subvol=@home           0 0
+/dev/mapper/vda2_crypt /root                     btrfs defaults,noatime,subvol=@root           0 0
+/dev/mapper/vda2_crypt /srv                      btrfs defaults,noatime,subvol=@srv            0 0
+/dev/mapper/vda2_crypt /var/cache                btrfs defaults,noatime,subvol=@var_cache      0 0
+/dev/mapper/vda2_crypt /var/lib/containers       btrfs defaults,noatime,subvol=@var_containers 0 0
+/dev/mapper/vda2_crypt /var/lib/libvirt/images   btrfs defaults,noatime,subvol=@var_libvirt    0 0
+/dev/mapper/vda2_crypt /var/log                  btrfs defaults,noatime,subvol=@var_log        0 0
+/dev/mapper/vda2_crypt /var/tmp                  btrfs defaults,noatime,subvol=@var_tmp        0 0
+```
+
+Check the mounted layout against `fstab`, then leave the top-level mount. Keep the installer-created `@rootfs` until you have a verified boot and have checked that it holds no needed files.
+
+```bash
+mount | grep ' /target'
+cd /
+umount /mnt
+```
+
+14. Switch back to the installer with **Ctrl+Alt+F1**. Install the base system, configure the package manager, and install the standard system utilities.
+15. Before running **Install the GRUB boot loader**, switch to the installer shell and set `GRUB_ENABLE_CRYPTODISK=y` in `/target/etc/default/grub`. Edit the existing setting if one is present. I originally found I needed this when the installer tried GRUB and failed on the encrypted root.
+16. Switch back, install GRUB, and finish the installer. If GRUB fails, read the installer log and check the boot keyslot, the EFI mount, and the GRUB setting before retrying.
+17. After reboot, check `findmnt -R /` and confirm `/` is mounted from `@`, `/home` from `@home`, and the EFI partition at `/boot/efi`.
+
+## Create key to keep from being asked for two passwords
+
+This optional step lets GRUB take the passphrase and then lets the initramfs unlock the same device with a keyfile. The initramfs must stay inside the encrypted `/boot`. Keep the original passphrase keyslot and treat any copy of the initramfs as sensitive.
+
+1. In a root shell, create and enroll the key. Record the slot cryptsetup actually adds.
+
+```bash
+install -d -m 0700 /etc/keys
+( umask 0077 && dd if=/dev/urandom bs=1 count=64 of=/etc/keys/root.key conv=excl,fsync )
+cryptsetup luksAddKey /dev/vda2 /etc/keys/root.key
+cryptsetup luksDump /dev/vda2 | grep "^Keyslots" -A16
+```
+
+Output:
+
+```bash
+Keyslots:
+  0: luks2
+...
+Keyslots:
+  1: luks2
+```
+
+2. Edit the third column of the root device's existing `/etc/crypttab` entry to point to the key. Keep its UUID, mapper name, and required options. In my example the new key is in slot 1. Replace it with the actual slot or omit `key-slot`.
+
+```text
+vda2_crypt UUID=YOUR_LUKS_UUID /etc/keys/root.key luks,key-slot=1
+```
+
+3. Set `KEYFILE_PATTERN="/etc/keys/*.key"` in `/etc/cryptsetup-initramfs/conf-hook`. Confirm that `cryptsetup-initramfs` is installed.
+4. Set `UMASK=0077` in `/etc/initramfs-tools/initramfs.conf` to restrict access to the generated initramfs.
+
+5. Regenerate the initramfs image.
+
+```bash
+update-initramfs -u -k all
+```
+
+6. Make sure the permissions are restrictive on the initramfs.
+
+```bash
+stat -c "%A  %n" /boot/initrd.img-*
+```
+
+7. Verify the key file has been imported into the initrd image.
+
+```bash
+lsinitramfs "/boot/initrd.img-$(uname -r)" | grep "^cryptroot/keyfiles/"
+```
+
+8. Confirm the images are root-only and the one you will boot contains the expected mapper key (here `cryptroot/keyfiles/vda2_crypt.key`). Reboot with your rescue media on hand. GRUB should prompt once and the initramfs should unlock without a second prompt.
+
+```bash
+sudo reboot
+```
+
+## Configure snapper and grub-btrfs
+
+1. Install snapper.
+
+```bash
+sudo apt install snapper inotify-tools make git
+```
+
+2. Check `sudo snapper list-configs` first. The steps below assume no existing root configuration or snapshots. Unmount the prepared `@snapshots` subvolume and remove only the empty mountpoint so Snapper can initialize its root config.
+
+```bash
+sudo umount /.snapshots
+sudo rmdir /.snapshots
+sudo snapper -c root create-config /
+```
+
+3. Snapper creates a `/.snapshots` subvolume when it creates the config. Verify this is the new empty subvolume, then replace it with the mountpoint for `@snapshots`.
+
+```bash
+sudo btrfs subvolume show /.snapshots
+sudo btrfs subvolume delete /.snapshots
+sudo mkdir /.snapshots
+sudo mount /.snapshots
+findmnt --mountpoint /.snapshots
+```
+
+4. Disable the snapper boot time snapshots (unless you want them).
+
+```bash
+sudo systemctl disable snapper-boot.timer
+```
+
+5. Set the following Snapper config.
+
+```bash
+sudo nano /etc/snapper/configs/root
+```
+
+Recommended configuration for `root`, but can be tweaked to your liking.
+
+```text
+SUBVOLUME="/"
+FSTYPE="btrfs"
+ALLOW_GROUPS="sudo"
+SYNC_ACL="yes"
+BACKGROUND_COMPARISON="yes"
+NUMBER_CLEANUP="yes"
+NUMBER_MIN_AGE="1800"
+NUMBER_LIMIT="20"
+NUMBER_LIMIT_IMPORTANT="10"
+TIMELINE_CREATE="no"
+TIMELINE_CLEANUP="yes"
+TIMELINE_MIN_AGE="1800"
+TIMELINE_LIMIT_HOURLY="5"
+TIMELINE_LIMIT_DAILY="7"
+TIMELINE_LIMIT_WEEKLY="0"
+TIMELINE_LIMIT_YEARLY="0"
+EMPTY_PRE_POST_CLEANUP="yes"
+EMPTY_PRE_POST_MIN_AGE="1800"
+```
+
+6. Install grub-btrfs. Review the release and its installation instructions before running `make install` as root.
+
+```bash
+cd ~
+mkdir -p git
+cd git
+git clone --branch v4.14 https://github.com/Antynea/grub-btrfs.git
+cd grub-btrfs
+sudo make install
+```
+
+7. On this encrypted layout, set `GRUB_BTRFS_ENABLE_CRYPTODISK="true"` in `/etc/default/grub-btrfs/config`. Check that the daemon watches `/.snapshots`, regenerate the menu, and enable the service.
+
+```bash
+sudo update-grub
+sudo systemctl enable --now grub-btrfsd
+```
+
+## More useful snapshot descriptions
+
+I wanted the Snapper entries to show which APT command ran instead of just saying `apt`. This is optional. The [hook script I used](https://gist.github.com/imthenachoman/f722f6d08dfb404fed2a3b2d83263118) runs as root on package operations. Review it first and check the existing hooks with `apt-config dump`. Back up the packaged hook outside `/etc/apt/apt.conf.d/`, then follow the script author's instructions to replace it in place. Avoid keeping both hooks active.
+
+Create a baseline snapshot once your mounts and boot are working.
+
+```bash
+sudo snapper -c root create -d "base-install" -u important=yes
+```
+
+:::tip
+I keep this snapshot around as a known starting point. It captures the root subvolume. It leaves separately mounted subvolumes out, including my home directory and VM images.
+:::
+
+Old output:
+
+```bash
+  # | Type   | Pre # | Date | User | Cleanup | Description  | Userdata
+----+--------+-------+------+------+---------+--------------+---------------
+ 0  | single |       | ...  | root |         | current      |
+ 1  | single |       | ...  | root |         | base-install | important=yes
+ 2  | pre    |       | ...  | root | number  | apt          |
+ 3  | post   |     2 | ...  | root | number  | apt          |
+```
+
+New improved output with more info in the `Description` table:
+
+```bash
+  # | Type   | Pre # | Date | User | Cleanup | Description                | Userdata
+----+--------+-------+------+------+---------+----------------------------+---------------
+ 0  | single |       | ...  | root |         | current                    |
+ 1  | single |       | ...  | root |         | base-install               | important=yes
+ 2  | pre    |       | ...  | root | number  | apt install btrfs-compsize |
+ 3  | post   |     2 | ...  | root | number  | apt install btrfs-compsize |
+```
+
+This will help greatly to have an idea of what changes happened in our last snapshots.
+
+## Install snapper-rollback for easy snapper rollbacks
+
+1. Review the third-party rollback helper and install it if it matches your layout. With a fixed `subvol=@` root, simply changing the Btrfs default subvolume won't change what the system boots.
+
+```bash
+cd ~/git
+git clone https://github.com/jrabinow/snapper-rollback.git
+cd snapper-rollback
+sudo install -m 0755 snapper-rollback.py /usr/local/sbin/snapper-rollback
+sudo cp snapper-rollback.conf /etc/
+sudo apt install python3-btrfsutil
+```
+
+2. Edit snapper-rollback.conf.
+
+```bash
+sudo nano /etc/snapper-rollback.conf
+```
+
+```bash
+subvol_main = @
+subvol_snapshots = @snapshots
+mountpoint = /tmp/snapper-rollback-mnt
+dev = /dev/mapper/vda2_crypt
+```
+
+3. Example rollback as seen [here](https://github.com/jrabinow/snapper-rollback?tab=readme-ov-file#example-usage).
+
+```bash
+sudo snapper list
+ # | Type   | Pre # | Date                            | User | Cleanup  | Description  | Userdata
+ ---+--------+-------+---------------------------------+------+----------+--------------+---------------------
+ 0  | single |       |                                 | root |          | current      |
+ 1  | single |       | Mon 19 Jul 2021 08:59:01 PM PDT | root |          | base-install |
+ 2  | single |       | Fri 30 Jul 2021 10:00:08 PM PDT | root | timeline | timeline     |
+ 3  | single |       | Fri 30 Jul 2021 11:00:08 PM PDT | root | timeline | timeline     |
+```
+
+```bash
+sudo snapper-rollback 1        # let's revert back to the snapshot whos description is `base-install`
+Are you SURE you want to rollback? Type 'CONFIRM' to continue: CONFIRM
+2021-10-17 23:25:47,889 - INFO - Rollback to /@snapshots/1/snapshot complete. Reboot to finish
+```
+
+## Verification
+
+Before depending on rollback, test it in a VM or with a recoverable copy of the installation. Verify the root, home, snapshots, and EFI mounts with `findmnt -R /`. Use `sudo snapper -c root list` to check the baseline snapshot and `systemctl status grub-btrfsd` to check the menu watcher. Boot a test snapshot from GRUB and practice restoring `@`. Verify that a marker file in `/home` survives and that the restored kernel, initramfs, and GRUB still boot together.
+
+## Notes
+
+- I would much rather use the limine bootloader with snapper and limine-snapper-sync, but alas, I haven't gotten that configuration working as of yet in Debian... Maybe in a future article...
+
+## References
+
+- [Debian 13 installer manual](https://www.debian.org/releases/trixie/amd64/)
+- [GNU GRUB cryptomount and supported LUKS2 key derivation](https://www.gnu.org/software/grub/manual/grub/html_node/cryptomount.html)
+- [Debian cryptsetup-luksConvertKey manual](https://manpages.debian.org/trixie/cryptsetup-bin/cryptsetup-luksConvertKey.8.en.html)
+- [Btrfs mount and file attribute behavior](https://btrfs.readthedocs.io/en/latest/Administration.html)
+- [Snapper manual](https://manpages.debian.org/trixie/snapper/snapper.8.en.html)
+- [grub-btrfs v4.14 and encrypted snapshot support](https://github.com/Antynea/grub-btrfs/releases/tag/v4.14)
+
+- [Debian 12 with LUKS, BTRFS, and subvolumes](https://www.matuck.com/tech/2023/09/03/Debian-12-with-LUKS,-BTRFS,-and-subvolumes.html)
+- [Installing Debian with BTRFS, snapper, and grub-btrfs](https://medium.com/@inatagan/installing-debian-with-btrfs-snapper-backups-and-grub-btrfs-27212644175f)
+- [Better snapshot descriptions](https://gist.github.com/imthenachoman/f722f6d08dfb404fed2a3b2d83263118)
+- [Full disk encryption, including /boot: Unlocking LUKS devices from GRUB](https://cryptsetup-team.pages.debian.net/cryptsetup/encrypted-boot.html)
+- [CachyOS Wiki - Filesystem - BTRFS - Subvolume Layout](https://wiki.cachyos.org/installation/filesystem/#subvolume-layout)
+- [Conversion from LUKS1 to LUKS2 and back](https://wiki.archlinux.org/title/Dm-crypt/Device_encryption#Conversion_from_LUKS1_to_LUKS2_and_back)
+- [JWillikers BTRFS Layout](https://www.jwillikers.com/btrfs-layout)
+- [SUSE reference layout for subvolumes excluded from Snapper snapshots](https://documentation.suse.com/sle-micro/6.1/html/Micro-snapper-basic-concepts/index.html)
+- [snapper-rollback Github](https://github.com/jrabinow/snapper-rollback)

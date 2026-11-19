@@ -1,0 +1,96 @@
+# UniFi Chromecast Inter‑VLAN Configuration Guide
+
+I set this up on a UniFi Dream Machine Pro with UniFi switches and access points. My phones and computers stay on a user VLAN and the Chromecast and Android TV receivers stay on an IoT VLAN. I wanted to keep that separation and still be able to cast and mirror.
+
+## Prerequisites
+
+- A UniFi gateway that can proxy mDNS between the selected VLANs.
+- A Cast sender and receiver that already work together on one network. I use WPA2-Personal or wired Ethernet for the receivers. Check your model's Wi-Fi support and make sure isolation rules allow the paths you need.
+- DHCP reservations for the receivers so the firewall rules can target their addresses. Give each receiver the outbound connectivity it needs for its services.
+
+## Network Model
+
+| Network | Devices |
+| --- | --- |
+| User VLAN | Phones, laptops, and tablets |
+| IoT VLAN | Chromecast and Android TV or Google TV receivers |
+
+## Required Ports and Protocols
+
+### Discovery (Multicast)
+
+Google Cast advertises `_googlecast._tcp.local` over mDNS (UDP 5353). Its IPv4 multicast address is `224.0.0.251`. UniFi's mDNS proxy makes selected services discoverable across VLANs. A firewall rule for UDP 5353 alone won't do that.
+
+Some apps also use SSDP/DIAL (UDP 1900 to `239.255.255.250`). UniFi's mDNS proxy handles mDNS. I start with Cast discovery and check the app's actual requirements if it still can't see the receiver.
+
+### Control & Session Setup (Unicast)
+
+I scoped my user-to-IoT allow rules to the receivers' addresses. My setup used TCP 8008, 8009, and 8443 for control and setup. Treat these as the ports from this setup and check the connections your sender and receiver actually make.
+
+### Media & Mirroring (Unicast)
+
+Internet streaming and screen mirroring use different traffic. A receiver may fetch an internet stream itself, while a mirrored screen needs a connection between the sender and receiver. In my setup UDP 10008 and traffic in UDP 32000–61000 were worth checking for mirroring. If mirroring fails, check the blocked flows for your models and add only what the sender and receiver need. Google’s published requirements for Cast Moderator cover its managed devices and should be read in that context.
+
+## UniFi mDNS Configuration
+
+### Enable mDNS on
+
+On the UniFi gateway, set **mDNS Proxy** to **Custom** and select the User and IoT VLANs. The exact location of the gateway setting varies with UniFi Network versions.
+
+### Restrict mDNS services to ONLY
+
+Start with **Google Chromecast**. Ubiquiti lists `_googlecast._tcp.local` and `_googlezone._tcp.local` in that preset. My config also included **Android TV Remote** and **DNS Service Discovery**. Add those if the clients you use need them.
+
+## IGMP Snooping Configuration
+
+### Enable IGMP Snooping on
+
+I had IGMP snooping enabled on the User VLAN on my UniFi switches. It manages multicast forwarding within that VLAN. Configure cross-VLAN discovery through the gateway's mDNS proxy.
+
+### Recommended settings
+
+My switches used automatic querier selection and unknown multicast handling, with Fast Leave enabled. Keep the switch defaults when starting out. Fast Leave removes a port immediately on a leave, so check whether several receivers share an uplink before using it there.
+
+### This helps
+
+IGMP snooping can limit unnecessary multicast traffic within a VLAN. If casting stutters, check RF conditions, wired links, and dropped traffic as well as multicast state.
+
+### Notes
+
+I troubleshoot basic discovery and unicast playback before changing IGMP settings.
+
+## Firewall Rule Design
+
+### Recommended approach
+
+1. Use the receiver reservations to scope rules from the User VLAN to the Chromecast and Android TV devices.
+2. Permit the observed control and mirroring flows and the corresponding stateful return traffic. Put the specific allowances before the inter-VLAN deny rule.
+3. If you have UniFi switch ACLs or client isolation enabled, verify that they allow the required traffic. A gateway rule cannot override a drop at the switch or AP.
+
+## Validation Checklist
+
+1. Find the receiver in the Cast picker from the User VLAN.
+2. Cast an internet video, then stop it from the same sender.
+3. Mirror a screen or browser tab and keep it running long enough to check for stutter.
+4. Check that an unrelated IoT device is still blocked by the policy.
+
+## Common Issues
+
+| Symptom | What I check |
+| --- | --- |
+| Receiver is missing | Both VLANs are included in Custom mDNS and the Google Chromecast preset is enabled |
+| The receiver appears but won't connect | Firewall logs for the chosen sender and receiver, starting with TCP 8009 |
+| Streaming works but mirroring fails | Dropped UDP flows and return traffic while mirroring |
+| Playback stutters | Wi-Fi signal, link errors, and multicast state if the affected traffic is multicast |
+
+## Final Notes
+
+This worked with my UDM Pro, UniFi Layer 3 switches, and wireless Chromecast and Android TV devices with inter-VLAN firewall enforcement. I'd test discovery, casting, and mirroring again after changing VLAN or isolation settings.
+
+## References
+
+- [Ubiquiti's Chromecast and AirPlay setup](https://help.ui.com/hc/en-us/articles/4409866388887-Best-Practices-for-Chromecast-and-AirPlay)
+- [UniFi gateway mDNS proxy and service presets](https://help.ui.com/hc/en-us/articles/12648701398807-UniFi-Gateway-Multicast-DNS)
+- [UniFi switch isolation and IGMP settings](https://help.ui.com/hc/en-us/articles/33402927617047-UniFi-Switch-Settings)
+- [Google's Chromecast and Google TV Streamer Wi-Fi guidance](https://support.google.com/chromecast/answer/7566322)
+- [Google's Cast Moderator network requirements](https://support.google.com/chrome/a/answer/12256492?hl=en)
