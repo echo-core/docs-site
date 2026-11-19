@@ -24,10 +24,9 @@
   --echols-callout-note: #5c6d88;
   --echols-callout-tip: #397655;
   --echols-callout-info: #376c95;
-  --echols-callout-warning: #92641f;
+  --echols-callout-warning: #998000;
   --echols-callout-danger: #a34a46;
-  --echols-callout-tint: 32%;
-  --echols-callout-border-strength: 70%;
+  --echols-callout-tint: 11%;
 }
 
 [data-theme='dark'] {
@@ -46,7 +45,6 @@
   --echols-callout-warning: #e9c675;
   --echols-callout-danger: #e79690;
   --echols-callout-tint: 20%;
-  --echols-callout-border-strength: 100%;
   --echols-callout-text: color-mix(in srgb, var(--ifm-font-color-base) 62%, var(--echols-muted));
 }
 
@@ -70,21 +68,6 @@
   --echols-callout-accent: var(--echols-callout-danger);
 }
 
-/* Tune each fill and border where the shared settings differ in contrast across themes. */
-[data-theme='light'] .theme-admonition.alert--secondary {
-  --echols-callout-tint: 50%;
-  --echols-callout-border-strength: 66%;
-}
-
-[data-theme='light'] .theme-admonition.alert--warning {
-  --echols-callout-tint: 38%;
-  --echols-callout-border-strength: 53%;
-}
-
-[data-theme='light'] .theme-admonition.alert--danger {
-  --echols-callout-border-strength: 75%;
-}
-
 [data-theme='dark'] .theme-admonition.alert--secondary {
   --echols-callout-tint: 30%;
 }
@@ -96,12 +79,12 @@
     var(--ifm-background-surface-color)
   );
   --ifm-alert-background-color-highlight: color-mix(in srgb, var(--echols-callout-accent) 14%, transparent);
-  --ifm-alert-border-color: color-mix(
-    in srgb,
-    var(--echols-callout-accent) var(--echols-callout-border-strength),
-    black
-  );
+  --ifm-alert-border-color: var(--echols-callout-accent);
   --ifm-alert-foreground-color: var(--echols-callout-text, var(--ifm-font-color-base));
+}
+
+[data-theme='light'] .theme-admonition.alert--warning {
+  --ifm-alert-background-color: #fbfcd4;
 }
 
 .navbar__brand {
