@@ -1,0 +1,37 @@
+.badge {
+  display: inline-grid;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--ifm-color-primary) 18%, transparent);
+  border-radius: 0.625rem;
+  background: color-mix(in srgb, var(--ifm-color-primary) 10%, var(--echols-surface));
+  color: var(--ifm-color-primary);
+  vertical-align: middle;
+}
+
+.folder {
+  position: relative;
+  inline-size: 1.25rem;
+  block-size: 1.0625rem;
+}
+
+.folder::before,
+.folder::after {
+  position: absolute;
+  inset-inline: 0;
+  border-radius: 0.1875rem;
+  content: '';
+}
+
+.folder::before {
+  inset-block: 0 0.125rem;
+  background: color-mix(in srgb, currentColor 65%, var(--echols-surface));
+  clip-path: polygon(0 0, 42% 0, 56% 26%, 100% 26%, 100% 100%, 0 100%);
+}
+
+.folder::after {
+  inset-block: 0.375rem 0;
+  background: currentColor;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--echols-surface) 24%, transparent);
+}
