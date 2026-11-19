@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunksite=self.webpackChunksite||[]).push([["234"],{4949(e,s,a){a.d(s,{A:()=>c});var n=a(4686),i=a(4695);function c(e){return"category"!==e.item.type||"\u{1F5C3}"!==e.icon?(0,n.jsx)(i.A,{...e}):(0,n.jsx)(i.A,{...e,icon:(0,n.jsx)("span",{"aria-hidden":"true",className:"badge_i4W6",children:(0,n.jsx)("span",{className:"folder_UnWO"})})})}}}]);
