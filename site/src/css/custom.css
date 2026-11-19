@@ -1,49 +1,38 @@
 :root {
-  --echols-surface: #fff9f9;
-  --echols-border: #e5d6db;
-  --echols-muted: #62535b;
+  --ifm-color-primary: #b82d30;
+  --ifm-color-primary-dark: color-mix(in srgb, var(--ifm-color-primary) 90%, black);
+  --ifm-color-primary-darker: color-mix(in srgb, var(--ifm-color-primary) 82%, black);
+  --ifm-color-primary-darkest: color-mix(in srgb, var(--ifm-color-primary) 70%, black);
+  --ifm-color-primary-light: color-mix(in srgb, var(--ifm-color-primary) 90%, white);
+  --ifm-color-primary-lighter: color-mix(in srgb, var(--ifm-color-primary) 78%, white);
+  --ifm-color-primary-lightest: color-mix(in srgb, var(--ifm-color-primary) 60%, white);
+  --echols-surface: #fff8f6;
+  --echols-border: #ead9d5;
+  --echols-muted: #695653;
   --echols-on-accent: #fff;
-  --echols-accent-hover: #951c36;
-  --echols-glow: #f6cbd3;
-  --echols-orbit: #b44960;
-  --echols-grid: #dab7c0;
-  --ifm-background-color: #fffdfd;
-  --ifm-background-surface-color: #fffdfd;
-  --ifm-font-color-base: #2b2028;
-  --ifm-color-primary: #ab2541;
-  --ifm-color-primary-dark: #9a213b;
-  --ifm-color-primary-darker: #901f37;
-  --ifm-color-primary-darkest: #781a2e;
-  --ifm-color-primary-light: #bc2947;
-  --ifm-color-primary-lighter: #c52b4b;
-  --ifm-color-primary-lightest: #d73756;
+  --echols-accent-hover: var(--ifm-color-primary-darker);
+  --echols-glow: color-mix(in srgb, var(--ifm-color-primary) 24%, var(--echols-surface));
+  --echols-orbit: color-mix(in srgb, var(--ifm-color-primary) 48%, var(--echols-surface));
+  --ifm-background-color: #fffdfc;
+  --ifm-background-surface-color: #fffdfc;
+  --ifm-font-color-base: #2c201e;
   --ifm-navbar-shadow: 0 1px 0 var(--echols-border);
   --ifm-navbar-link-hover-color: var(--ifm-color-primary);
   --ifm-toc-border-color: var(--echols-border);
   --ifm-code-font-size: 95%;
-  --docusaurus-highlighted-code-line-bg: rgba(132, 47, 73, 0.12);
+  --docusaurus-highlighted-code-line-bg: color-mix(in srgb, var(--ifm-color-primary) 13%, transparent);
 }
 
 [data-theme='dark'] {
-  --echols-surface: #201a22;
-  --echols-border: #3e323e;
-  --echols-muted: #c6b8c4;
-  --echols-on-accent: #28121a;
-  --echols-accent-hover: #ffabb8;
-  --echols-glow: #592634;
-  --echols-orbit: #865165;
-  --echols-grid: #674253;
-  --ifm-background-color: #171319;
-  --ifm-background-surface-color: #1d181f;
-  --ifm-font-color-base: #f5edf2;
-  --ifm-color-primary: #ff879e;
-  --ifm-color-primary-dark: #ff6381;
-  --ifm-color-primary-darker: #ff5173;
-  --ifm-color-primary-darkest: #ff1b47;
-  --ifm-color-primary-light: #ffabbb;
-  --ifm-color-primary-lighter: #ffbdc9;
-  --ifm-color-primary-lightest: #fff3f6;
-  --docusaurus-highlighted-code-line-bg: rgba(255, 135, 158, 0.13);
+  --ifm-color-primary: #f66b60;
+  --echols-surface: #211b1b;
+  --echols-border: #423433;
+  --echols-muted: #cbbab7;
+  --echols-on-accent: #251513;
+  --echols-accent-hover: var(--ifm-color-primary-lighter);
+  --ifm-background-color: #181414;
+  --ifm-background-surface-color: #1e1918;
+  --ifm-font-color-base: #f6eeec;
 }
 
 .navbar__brand {

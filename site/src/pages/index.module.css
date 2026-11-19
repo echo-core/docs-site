@@ -1,22 +1,22 @@
 .home {
-  --rack-outline: #a94e61;
-  --rack-top: #edb6bd;
-  --rack-front: #f8d4da;
-  --rack-side: #e197a5;
-  --rack-grill: #b95d71;
-  --rack-led: #9b253d;
+  --rack-outline: color-mix(in srgb, var(--ifm-color-primary) 70%, var(--echols-surface));
+  --rack-top: color-mix(in srgb, var(--ifm-color-primary) 29%, var(--echols-surface));
+  --rack-front: color-mix(in srgb, var(--ifm-color-primary) 18%, var(--echols-surface));
+  --rack-side: color-mix(in srgb, var(--ifm-color-primary) 43%, var(--echols-surface));
+  --rack-grill: color-mix(in srgb, var(--ifm-color-primary) 63%, var(--echols-surface));
+  --rack-led: var(--ifm-color-primary-dark);
   width: min(calc(100% - 4rem), 72rem);
   margin-inline: auto;
   padding-block: clamp(1.8rem, 4.5vw, 4rem) 0;
 }
 
 :global([data-theme='dark']) .home {
-  --rack-outline: #b97687;
-  --rack-top: #4d303f;
-  --rack-front: #593748;
-  --rack-side: #352430;
-  --rack-grill: #885364;
-  --rack-led: #ff9eac;
+  --rack-outline: color-mix(in srgb, var(--ifm-color-primary) 62%, var(--echols-surface));
+  --rack-top: color-mix(in srgb, var(--ifm-color-primary) 25%, var(--echols-surface));
+  --rack-front: color-mix(in srgb, var(--ifm-color-primary) 31%, var(--echols-surface));
+  --rack-side: color-mix(in srgb, var(--ifm-color-primary) 13%, var(--echols-surface));
+  --rack-grill: color-mix(in srgb, var(--ifm-color-primary) 44%, var(--echols-surface));
+  --rack-led: var(--ifm-color-primary-light);
 }
 
 .masthead {
