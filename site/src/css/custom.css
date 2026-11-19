@@ -21,6 +21,13 @@
   --ifm-toc-border-color: var(--echols-border);
   --ifm-code-font-size: 95%;
   --docusaurus-highlighted-code-line-bg: color-mix(in srgb, var(--ifm-color-primary) 13%, transparent);
+  --echols-callout-note: #5c6d88;
+  --echols-callout-tip: #397655;
+  --echols-callout-info: #376c95;
+  --echols-callout-warning: #92641f;
+  --echols-callout-danger: #a34a46;
+  --echols-callout-tint: 32%;
+  --echols-callout-border-strength: 70%;
 }
 
 [data-theme='dark'] {
@@ -33,6 +40,68 @@
   --ifm-background-color: #181414;
   --ifm-background-surface-color: #1e1918;
   --ifm-font-color-base: #f6eeec;
+  --echols-callout-note: #a8b7ce;
+  --echols-callout-tip: #88c6a0;
+  --echols-callout-info: #89b9de;
+  --echols-callout-warning: #e9c675;
+  --echols-callout-danger: #e79690;
+  --echols-callout-tint: 20%;
+  --echols-callout-border-strength: 100%;
+  --echols-callout-text: color-mix(in srgb, var(--ifm-font-color-base) 62%, var(--echols-muted));
+}
+
+.theme-admonition.alert--secondary {
+  --echols-callout-accent: var(--echols-callout-note);
+}
+
+.theme-admonition.alert--success {
+  --echols-callout-accent: var(--echols-callout-tip);
+}
+
+.theme-admonition.alert--info {
+  --echols-callout-accent: var(--echols-callout-info);
+}
+
+.theme-admonition.alert--warning {
+  --echols-callout-accent: var(--echols-callout-warning);
+}
+
+.theme-admonition.alert--danger {
+  --echols-callout-accent: var(--echols-callout-danger);
+}
+
+/* Tune each fill and border where the shared settings differ in contrast across themes. */
+[data-theme='light'] .theme-admonition.alert--secondary {
+  --echols-callout-tint: 50%;
+  --echols-callout-border-strength: 66%;
+}
+
+[data-theme='light'] .theme-admonition.alert--warning {
+  --echols-callout-tint: 38%;
+  --echols-callout-border-strength: 53%;
+}
+
+[data-theme='light'] .theme-admonition.alert--danger {
+  --echols-callout-border-strength: 75%;
+}
+
+[data-theme='dark'] .theme-admonition.alert--secondary {
+  --echols-callout-tint: 30%;
+}
+
+.theme-admonition:is(.alert--secondary, .alert--success, .alert--info, .alert--warning, .alert--danger) {
+  --ifm-alert-background-color: color-mix(
+    in srgb,
+    var(--echols-callout-accent) var(--echols-callout-tint),
+    var(--ifm-background-surface-color)
+  );
+  --ifm-alert-background-color-highlight: color-mix(in srgb, var(--echols-callout-accent) 14%, transparent);
+  --ifm-alert-border-color: color-mix(
+    in srgb,
+    var(--echols-callout-accent) var(--echols-callout-border-strength),
+    black
+  );
+  --ifm-alert-foreground-color: var(--echols-callout-text, var(--ifm-font-color-base));
 }
 
 .navbar__brand {
