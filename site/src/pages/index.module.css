@@ -1,23 +1,282 @@
-/**
- * CSS files with the .module.css suffix will be treated as CSS modules
- * and scoped locally.
- */
-
-.heroBanner {
-  padding: 4rem 0;
-  text-align: center;
-  position: relative;
-  overflow: hidden;
+.home {
+  --rack-outline: #a94e61;
+  --rack-top: #edb6bd;
+  --rack-front: #f8d4da;
+  --rack-side: #e197a5;
+  --rack-grill: #b95d71;
+  --rack-led: #9b253d;
+  width: min(calc(100% - 4rem), 72rem);
+  margin-inline: auto;
+  padding-block: clamp(1.8rem, 4.5vw, 4rem) 0;
 }
 
-@media screen and (max-width: 996px) {
-  .heroBanner {
-    padding: 2rem;
+:global([data-theme='dark']) .home {
+  --rack-outline: #b97687;
+  --rack-top: #4d303f;
+  --rack-front: #593748;
+  --rack-side: #352430;
+  --rack-grill: #885364;
+  --rack-led: #ff9eac;
+}
+
+.masthead {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--echols-border);
+  border-radius: 0.65rem;
+  background: var(--echols-surface);
+}
+
+.intro {
+  position: relative;
+  z-index: 1;
+  padding: clamp(1.5rem, 3.2vw, 2.85rem);
+}
+
+.eyebrow {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.76rem;
+  letter-spacing: 0.07em;
+}
+
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0 0 0.8rem;
+  color: var(--ifm-color-primary);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.eyebrow::before {
+  width: 1.5rem;
+  height: 2px;
+  background: currentColor;
+  content: '';
+}
+
+.intro h1 {
+  margin: 0;
+  font-size: clamp(3.2rem, 5.1vw, 4.85rem);
+  letter-spacing: -0.068em;
+  line-height: 1;
+}
+
+.tagline {
+  margin: 0.55rem 0 0;
+  color: var(--echols-muted);
+  font-size: 1.05rem;
+}
+
+.introduction {
+  margin: 0.9rem 0 1.3rem;
+  font-size: 1.04rem;
+  line-height: 1.5;
+}
+
+.welcome {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: 0.35rem 1rem;
+  border-radius: 0.3rem;
+  background: var(--ifm-color-primary);
+  color: var(--echols-on-accent);
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.welcome:hover {
+  background: var(--echols-accent-hover);
+  color: var(--echols-on-accent);
+  text-decoration: none;
+}
+
+.illustration {
+  position: relative;
+  display: grid;
+  height: 100%;
+  min-height: 13rem;
+  place-items: center;
+  isolation: isolate;
+}
+
+.illustration::before {
+  position: absolute;
+  inset: 0 -1px 0 -10%;
+  z-index: -1;
+  background:
+    radial-gradient(circle, var(--echols-orbit) 0.8px, transparent 1px) center / 13px 13px,
+    radial-gradient(ellipse at center, var(--echols-glow), transparent 75%);
+  mask-image: radial-gradient(ellipse at 53% 55%, black 5%, transparent 72%);
+  content: '';
+}
+
+.rack {
+  position: relative;
+  width: 206px;
+  height: 154px;
+  transform: scale(1.18);
+}
+
+.unit, .topFace, .sideFace, .frontFace {
+  position: absolute;
+}
+
+.unit { inset-inline: 0; }
+
+.topFace, .sideFace, .frontFace {
+  border: 1px solid var(--rack-outline);
+  transform-origin: top left;
+}
+
+.topFace {
+  top: 35px;
+  left: 8px;
+  width: 126px;
+  height: 59px;
+  background: var(--rack-top);
+  transform: matrix(1, 0.2493, 1, -0.57735, 0, 0);
+}
+
+.topFace::after {
+  position: absolute;
+  inset: 9px 62px 18px 12px;
+  background: repeating-linear-gradient(to right, var(--rack-grill) 0 2px, transparent 2px 5px);
+  content: '';
+}
+
+.sideFace {
+  top: 66.4px;
+  left: 134px;
+  width: 59px;
+  height: 22px;
+  background: var(--rack-side);
+  transform: skewY(-30deg);
+}
+
+.frontFace {
+  top: 35px;
+  left: 8px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  width: 126px;
+  height: 22px;
+  padding-inline-start: 8px;
+  background: var(--rack-front);
+  transform: skewY(14deg);
+}
+
+.frontFace i {
+  width: 6px;
+  height: 5px;
+  border: 1px solid var(--rack-outline);
+  border-radius: 1px;
+}
+
+.frontFace i:last-child {
+  width: 13px;
+  height: 3px;
+  margin-inline-start: auto;
+  margin-inline-end: 8px;
+  border: 0;
+  background: var(--rack-led);
+}
+
+.topics {
+  padding-block: clamp(2rem, 4vw, 3.5rem) 4rem;
+}
+
+.topics h2 {
+  margin-block-end: 1.3rem;
+  font-size: clamp(1.65rem, 2.5vw, 2.15rem);
+  letter-spacing: -0.035em;
+}
+
+.topicGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.topic {
+  padding: clamp(1rem, 2vw, 1.5rem);
+  border: 1px solid var(--echols-border);
+  border-radius: 0.875rem;
+  background: var(--echols-surface);
+}
+
+.topic h3 {
+  margin-block-end: 0.8rem;
+  font-size: 1.2rem;
+  letter-spacing: -0.025em;
+}
+
+.topic h3 a {
+  display: inline-block;
+  padding-block: 0.25rem;
+}
+
+.articleList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.articleList li {
+  border-top: 1px solid var(--echols-border);
+}
+
+.articleList a {
+  display: flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding-block: 0.45rem;
+  color: var(--ifm-font-color-base);
+  line-height: 1.45;
+}
+
+.articleList a:hover {
+  color: var(--ifm-color-primary);
+}
+
+@media (max-width: 800px) {
+  .topicGrid {
+    grid-template-columns: 1fr;
   }
 }
 
-.buttons {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+@media (max-width: 720px) {
+  .home { width: calc(100% - 2.5rem); }
+  .rack { transform: scale(0.78); }
+  .intro h1 { font-size: clamp(2.6rem, 6.5vw, 3.75rem); }
+  .intro { padding: 1.6rem; }
+}
+
+@media (max-width: 520px) {
+  .home { padding-block-start: 1.25rem; }
+  .masthead { display: block; }
+  .intro { padding: 1.25rem; }
+  .intro h1 { font-size: clamp(2.55rem, 10.5vw, 3.25rem); }
+  .eyebrow { margin-bottom: 0.7rem; font-size: 0.64rem; }
+  .tagline { margin-block: 0.48rem 0; font-size: 0.94rem; }
+  .introduction { max-width: 30ch; margin: 0.75rem 0 0.9rem; font-size: 0.92rem; }
+  .welcome { font-size: 0.87rem; }
+  .illustration {
+    position: absolute;
+    right: 0.4rem;
+    bottom: 0.25rem;
+    width: 7rem;
+    height: 4.45rem;
+    min-height: 0;
+    pointer-events: none;
+  }
+  .illustration::before { inset: -35%; }
+  .rack { position: absolute; transform: scale(0.47); }
+  .topics { padding-block: 1.9rem 2.75rem; }
 }

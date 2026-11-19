@@ -5,6 +5,7 @@
 // See: https://docusaurus.io/docs/api/docusaurus-config
 
 import {themes as prismThemes} from 'prism-react-renderer';
+import homepageTopics from './plugins/homepage-topics.js';
 
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
@@ -56,6 +57,8 @@ const config = {
     defaultLocale: 'en',
     locales: ['en'],
   },
+
+  plugins: [homepageTopics],
 
   presets: [
     [
@@ -126,57 +129,18 @@ const config = {
         ],
       },
       footer: {
-        style: 'dark',
         links: [
-          {
-            title: 'Docs',
-            items: [
-              {
-                label: 'Articles',
-                to: '/docs/welcome',
-              },
-            ],
-          },
-	/**
-          {
-            title: 'Community',
-            items: [
-              {
-                label: 'Stack Overflow',
-                href: 'https://stackoverflow.com/questions/tagged/docusaurus',
-              },
-              {
-                label: 'Discord',
-                href: 'https://discordapp.com/invite/docusaurus',
-              },
-              {
-                label: 'X',
-                href: 'https://x.com/docusaurus',
-              },
-            ],
-          },
-	  **/
-          {
-            title: 'More',
-            items: [
-	/**
-              {
-                label: 'Blog',
-                to: '/blog',
-              },
-	      **/
-              {
-                label: 'Heaven',
-		to: '/heaven',
-              },
-              {
-                label: 'GitHub',
-                href: 'https://github.com/echo-core/docs-site',
-              },
-            ],
-          },
+          {label: 'Articles', to: '/docs/welcome'},
+          {label: 'Heaven', to: '/heaven'},
+          {label: 'GitHub', href: 'https://github.com/echo-core/docs-site'},
         ],
-        copyright: `Copyright © ${new Date().getFullYear()} Echols Home.`,
+        logo: {
+          alt: '',
+          src: 'img/echols-home-logo.svg',
+          width: 27,
+          height: 18,
+        },
+        copyright: `© ${new Date().getFullYear()} Echols Home`,
       },
       prism: {
         theme: prismThemes.github,
