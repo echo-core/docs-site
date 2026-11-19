@@ -1,0 +1,17 @@
+.moon {
+  position: relative;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+}
+
+.moon::before {
+  position: absolute;
+  inset: 0.1875rem;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 34% 36%, currentColor 12%, transparent 17%),
+    radial-gradient(circle at 67% 60%, currentColor 9%, transparent 14%),
+    radial-gradient(circle at 34% 72%, currentColor 5%, transparent 10%);
+  content: '';
+}
