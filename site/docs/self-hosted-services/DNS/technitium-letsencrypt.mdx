@@ -2,128 +2,172 @@
 slug: /linux/DNS/technitium-letsencrypt
 ---
 
-# Technitium Let's Encrypt with Cloudflare
+# Technitium Letsencrypt with Cloudflare
 
-This is how I use Let's Encrypt to serve encrypted DNS from Technitium. Certbot completes the DNS-01 challenge against Cloudflare. A deploy hook converts the issued certificate to the PKCS#12 file Technitium expects.
+<a id="prerequisites" />
 
-## Prerequisites
-
-- A working native Technitium DNS Server installation on Debian 13 with a systemd service named `technitium`. This example assumes the service runs as root. Check with `systemctl cat technitium`. If yours runs as a dedicated user, give only that user or service group read access to the PFX and traversal access to its parent directory.
-- A Cloudflare-managed public DNS zone. Create a token with `Zone:DNS:Edit` limited to that zone. The challenge does not require opening port 80.
-- Clients must be able to resolve and reach your endpoint, such as `dns.domain.com`. For a direct Technitium endpoint, use a DNS-only Cloudflare record when using Cloudflare for that hostname. Decide who should be able to use recursion before exposing any listeners.
+This document will walk through the steps to setup Letsencrypt with DoH and Cloudflare. _This guide assumes you have a working Technitium install, are running on at least Debian 13 and have a properly configured Cloudflare API token_.
 
 ## Install required packages
 
-Run the setup commands in a root shell.
+On a `root` shell run the following to install the certbot packages needed to use `DNS-01` challenges.
 
 ```bash
-apt install certbot python3-certbot-dns-cloudflare openssl bind9-dnsutils
+apt install certbot python3-certbot-dns-cloudflare -y
 ```
 
-## Configure Certbot
+## Configure certbot
 
-Store the Cloudflare token in a root-only file.
+Create script to run on a sucessful certificate deploy that will generate an updated pfx cert for Technitium and restart its service.
 
 ```bash
-install -d -m 0700 /etc/letsencrypt/secrets
-(umask 077; editor /etc/letsencrypt/secrets/cloudflare.ini)
-chmod 0600 /etc/letsencrypt/secrets/cloudflare.ini
+mkdir -p /etc/letsencrypt/renewal-hooks/deploy
+vim /etc/letsencrypt/renewal-hooks/deploy/pkcs12convert.sh
 ```
 
-Set this in `cloudflare.ini`.
+- Paste the following into the file. Replace `domain.com` with your domain. You can update the `passout` as well. Save that as you'll need to add that to the Technitium interface to use the newly created cert.
 
-```ini
-dns_cloudflare_api_token = YOUR_API_TOKEN
-```
+```bash
+#!/usr/bin/env sh
 
-Save a PFX password on the first line of `/etc/letsencrypt/secrets/technitium-pfx-password` and set the file to mode `0600`. You'll use the same password in the Technitium UI.
+DOMAIN=domain.com
 
-Save this script as `/etc/letsencrypt/renewal-hooks/deploy/pkcs12convert.sh`. Replace `domain.com` here and in the request below with the same certificate name. The hook ignores other certificate lineages, writes the new PFX beside the old one, and restarts DNS only after the replacement succeeds. The restart briefly interrupts resolution.
+# generate pfx from certs
+openssl pkcs12 -export -out /etc/letsencrypt/live/${DOMAIN}/cert.pfx \
+        -inkey /etc/letsencrypt/live/${DOMAIN}/privkey.pem \
+        -in /etc/letsencrypt/live/${DOMAIN}/cert.pem \
+        -certfile /etc/letsencrypt/live/${DOMAIN}/chain.pem \
+        -passout pass:changeme
 
-```sh
-#!/bin/sh
-set -eu
-
-lineage=/etc/letsencrypt/live/domain.com
-[ "${RENEWED_LINEAGE:-}" = "$lineage" ] || exit 0
-
-umask 077
-pfx=$(mktemp /etc/dns/.letsencrypt.pfx.XXXXXX)
-trap 'rm -f "$pfx"' EXIT
-openssl pkcs12 -export -out "$pfx" \
-  -inkey "$lineage/privkey.pem" \
-  -in "$lineage/cert.pem" \
-  -certfile "$lineage/chain.pem" \
-  -passout file:/etc/letsencrypt/secrets/technitium-pfx-password
-mv -f "$pfx" /etc/dns/letsencrypt.pfx
+# restart technitium
 systemctl restart technitium
+
+echo "pkcs#12 generated!"
 ```
 
-Use the directory from your installation if it differs from `/etc/dns`. Make the script executable with `chmod 0700 /etc/letsencrypt/renewal-hooks/deploy/pkcs12convert.sh`.
+- Create a local certbot secret with the Cloudflare API token in it. This should be done as the `root` user for simplicity.
+
+```bash
+mkdir -p ~/.secrets/certbot
+echo "dns_cloudflare_api_token = YOUR_API_TOKEN" > ~/.secrets/certbot/cloudflare.ini
+chmod 600 ~/.secrets/certbot/cloudflare.ini
+```
 
 ## Request cert
 
-Replace the example domain and email address. Quote the wildcard so the shell can't expand it. If you only need one endpoint, request just that hostname and keep `--cert-name` and the hook in sync.
+Request cert manually for initial deployment. Replace `domain.com` with your domain and `user@domain.com` with the appropriate email address.
 
 ```bash
 certbot certonly --dns-cloudflare \
-  --dns-cloudflare-credentials /etc/letsencrypt/secrets/cloudflare.ini \
-  --cert-name domain.com \
-  -d domain.com -d '*.domain.com' \
-  --agree-tos --email user@domain.com --non-interactive
-```
-
-Check that `/etc/dns/letsencrypt.pfx` exists. If your Certbot version didn't run the directory hook on initial issuance, run it once after confirming the lineage with `certbot certificates`.
-
-```bash
-RENEWED_LINEAGE=/etc/letsencrypt/live/domain.com \
-  /etc/letsencrypt/renewal-hooks/deploy/pkcs12convert.sh
+  --dns-cloudflare-credentials ~/.secrets/certbot/cloudflare.ini \
+  -d domain.com \
+  -d *.domain.com \
+  --agree-tos \
+  --email user@domain.com \
+  --non-interactive
 ```
 
 ## Configure Technitium
 
-Go to **Settings → Optional Protocols**, set **TLS Certificate File Path** to `/etc/dns/letsencrypt.pfx`, and enter the PFX password in **TLS Certificate Password**. The screenshots show my original setup. Use the file path from the script above.
+- Configure Cert in Technitium.
 
-![Technitium TLS certificate settings](./img/technitium/technitium-cert.png)
+Launch the Technitium management interface then go to `Settings -> Optional Protocols`, then scroll to the bottom of the page and modify `TLS Certificate File Path` to the following. Modify `domain.com` to your domain and enter the password that you used in the script in step 2 in the `TLS Certificate Password` field. Once you have done that, go ahead and click `Save Settings` at the bottom of the page.
 
-Enable the protocols you'll use and save. Direct DoH uses TCP 443, DoT uses TCP 853, and DoQ uses UDP 853 on their default ports. DNS-over-HTTPS/3 adds UDP 443. Leave plaintext DNS-over-HTTP off for a direct setup. It is useful behind a TLS-terminating reverse proxy with a restricted backend.
+![Technitium Cert](./img/technitium/technitium-cert.png)
 
-![Technitium encrypted DNS protocol settings](./img/technitium/technitium-dns.png)
+- Configure DoH, DoT, and DoQ.
 
-<a id="test-new-configuration" />
+On the same page from step 5, enable the following services to make use of the new cert.
 
-## Verification
+- `DNS-over-HTTP`
+- `DNS-over-TLS`
+- `DNS-over-HTTPS`
+- `DNS-over-HTTPS/3`
+- `DNS-over-QUIC`
 
-Browse to `https://dns.domain.com/dns-query`. Technitium's DoH information page showed the secure DNS URL in my setup. The browser should accept the certificate for the endpoint hostname.
+![Technitium Cert](./img/technitium/technitium-dns.png)
 
-![Browser showing a valid TLS certificate](./img/technitium/technitium-cert-valid.png)
+<a id="verification" />
 
-![Technitium DoH information page](./img/technitium/technitium-url.png)
+## Test new configuration
 
-From a client, query a name you expect to resolve. Include `+tls-ca` so BIND's `dig` checks the certificate. Look for `NOERROR`, the expected answer, and the server endpoint over TLS or HTTPS.
+1. Test interface to ensure it's functioning correctly now.
+
+Browse to the url of your Technitium DNS server. You should have something like dns.domain.com setup. Your browser should not show any issues with the site when visiting the URL.
+
+![Technitium Cert](./img/technitium/technitium-cert-valid.png)
+
+and your informational page should now load showing your users how to congfigure their browser to point to the new secure DNS endpoint.
+
+![Technitium Cert](./img/technitium/technitium-url.png)
+
+2. Test dns resolution on new protocols.
+
+Use `dig` to test `DoT`.
 
 ```bash
-dig @dns.domain.com +tls +tls-ca example.com A
-dig @dns.domain.com +https +tls-ca example.com A
+dig @dns.domain.com +tls domain.com|tail -5
 ```
 
-Use a DoQ-capable client to test DoQ separately if you enabled it.
+In the output the following and we can see a successful query.
+
+```text
+;; Query time: 2 msec
+;; SERVER: 192.168.0.8#853(dns.domain.com) (TLS)
+;; WHEN: Tue Dec 23 18:02:29 EST 2025
+;; MSG SIZE  rcvd: 54
+```
+
+Use `dig` to test `DoH`.
+
+```bash
+dig @dns.domain.com +https domain.com|tail -5
+```
+
+In the output the following and we can see a successful query.
+
+```text
+;; Query time: 3 msec
+;; SERVER: 192.168.0.8#443(dns.domain.com) (HTTPS)
+;; WHEN: Tue Dec 23 18:04:20 EST 2025
+;; MSG SIZE  rcvd: 54
+```
 
 ## Certbot timer information
 
-On my Debian install, `certbot.timer` scheduled `certbot renew` twice a day with a randomized delay. Check what is enabled on your host and test renewal against staging.
+Certbot, when installed on Debian 13, will install a systemd timer that runs `certbot renew` twice a day. See snippet below.
 
 ```bash
-systemctl list-timers certbot.timer
-systemctl cat certbot.timer certbot.service
-certbot renew --cert-name domain.com --dry-run
+root@dns:~# systemctl cat certbot.timer
+# /usr/lib/systemd/system/certbot.timer
+[Unit]
+Description=Run certbot twice daily
+
+[Timer]
+OnCalendar=*-*-* 00,12:00:00
+RandomizedDelaySec=43200
+Persistent=true
+
+[Install]
+WantedBy=timers.target
 ```
 
-The dry run tests renewal and leaves the deploy hook out by default. To check the conversion as well, run the hook manually against the issued live certificate during a suitable restart window. Check the endpoint again afterward.
+Which you can see calls the `certbot.service` below which runs the `ExecStart` for the `certbot renew` command.
+
+```bash
+root@dns:~# systemctl cat certbot.service
+# /usr/lib/systemd/system/certbot.service
+[Unit]
+Description=Certbot
+Documentation=file:///usr/share/doc/python-certbot-doc/html/index.html
+Documentation=https://certbot.eff.org/docs
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/certbot -q renew --no-random-sleep-on-renew
+PrivateTmp=true
+```
 
 ## References
 
-- [Technitium's encrypted DNS setup guide](https://blog.technitium.com/2020/07/how-to-host-your-own-dns-over-https-and.html)
-- [Certbot Cloudflare DNS plugin and token permissions](https://certbot-dns-cloudflare.readthedocs.io/en/stable/)
-- [Certbot renewal and deploy hooks](https://eff-certbot.readthedocs.io/en/stable/using.html#renewing-certificates)
-- [BIND dig TLS and HTTPS options](https://bind9.readthedocs.io/en/latest/manpages.html#dig-dns-lookup-utility)
+- [Hosting DoH, DoT, and DoQ services](https://blog.technitium.com/2020/07/how-to-host-your-own-dns-over-https-and.html)
+- [Setting up DoH on Technitium with Cloudflare](https://ambientnode.uk/setting-up-dns-over-https-on-technitium-with-cloudflare)
