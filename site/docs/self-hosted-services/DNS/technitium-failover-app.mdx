@@ -1,0 +1,141 @@
+---
+slug: /linux/DNS/technitium-failover-app
+description: Configure DNS-based failover for Caddy instances using the Technitium Failover App.
+---
+
+# Caddy Failover with Technitium DNS
+
+I use the Technitium Failover App to give two Caddy instances one DNS name. When the primary stops answering the health check, Technitium can return the secondary address. This works well for services where a client can reconnect after DNS changes.
+
+## Overview
+
+The configuration consists of:
+
+- The Technitium Failover App monitoring Caddy health endpoints.
+- Caddy exposing a dedicated health check endpoint.
+- A Technitium APP record managing primary and secondary Caddy instances.
+- Application CNAME records pointing to the failover-enabled DNS record.
+
+When the primary becomes unhealthy and the secondary is healthy, new DNS lookups can return the secondary address. Existing connections and clients that still have the primary cached can take longer to switch.
+
+## Prerequisites
+
+- Technitium DNS Server with the Failover App installed
+- Two or more Caddy instances
+- A domain managed by Technitium DNS
+- Both Caddy instances serving the same application hostnames and trusted certificates. Technitium needs to reach each backend IP directly. The probe below checks the Caddy listener. Use an application health endpoint if failover should also detect upstream failures.
+
+## Step 1: Install the Failover App
+
+Install the **Failover App** from the Technitium DNS Server App Store.
+
+Open the installed Failover App's configuration and confirm it has a `healthChecks` array.
+
+## Step 2: Create a Custom Health Check
+
+Add this object to the existing `healthChecks` array. Keep the existing checks in place and add a comma between objects.
+
+```json
+{
+  "name": "caddy",
+  "type": "https",
+  "interval": 10,
+  "retries": 2,
+  "timeout": 3,
+  "url": "https://health.domain.com/caddy-health",
+  "emailAlert": "default",
+  "webHook": "default"
+}
+```
+
+### Configuration Notes
+
+- `interval`: Checks run every 10 seconds.
+- `retries`: The check can try twice on connection failures. A returned non-2xx status can fail a check immediately.
+- `timeout`: Requests timeout after 3 seconds.
+- `url`: Supplies the scheme, hostname, port, and path. The app connects to each address from the APP record and uses this hostname for the HTTP Host header.
+- `emailAlert` and `webHook`: Use the default notification settings.
+
+## Step 3: Configure a Caddy Health Endpoint
+
+Add a dedicated site to each Caddyfile with a certificate for `health.domain.com` that Technitium trusts. Use your own health-check hostname in both configurations.
+
+```caddy
+health.domain.com {
+    respond /caddy-health "OK" 200
+}
+```
+
+Validate and reload both Caddy configurations. From the Technitium host, verify each address directly before setting up the APP record. If HTTPS fails, check connectivity, hostname, and the server's certificate chain from that host. For an internal-only probe you can also use a separate HTTP listener and change both `type` and `url` to HTTP.
+
+```bash
+curl --fail --resolve health.domain.com:443:192.168.0.21 https://health.domain.com/caddy-health
+curl --fail --resolve health.domain.com:443:192.168.0.22 https://health.domain.com/caddy-health
+```
+
+## Step 4: Create a Failover APP Record
+
+In the authoritative zone, add an `APP` record and select the Failover app's `Failover.Address` class. Use an owner name without a competing A, AAAA, or CNAME record. Technitium checks native records before the app.
+
+Example record for `uc.infra.domain.com`:
+
+```json
+{
+  "primary": ["192.168.0.21"],
+  "secondary": ["192.168.0.22"],
+  "healthCheck": "caddy",
+  "allowTxtStatus": true
+}
+```
+
+<a id="configuration-notes-1" />
+
+### APP record options
+
+- `primary`: Preferred Caddy instance.
+- `secondary`: Failover Caddy instance.
+- `healthCheck`: References the custom health check created earlier.
+- `allowTxtStatus`: Enables a TXT query for backend addresses and health. I enable it while testing an internal zone. Leave it off on public records if you want to keep that information private.
+
+Set the APP record **TTL** to **10 seconds** for this example. The health-check interval and retries govern when Technitium notices a failure. The TTL governs how long a resolver may reuse the old answer.
+
+## Step 5: Point Application Records to the Failover Record
+
+Configure your application CNAME records to point to the failover-enabled record.
+
+Example:
+
+```dns
+app1.domain.com  CNAME  uc.infra.domain.com
+app2.domain.com  CNAME  uc.infra.domain.com
+app3.domain.com  CNAME  uc.infra.domain.com
+```
+
+Point each application name to the APP owner with a CNAME, using the appropriate zone. Set up both Caddy instances to serve the original application hostname, since DNS only changes where the client connects.
+
+## Verifying Failover
+
+Query the Technitium server directly so a cached answer can't hide the change. Replace `192.168.0.8` with your authoritative server. The TXT query works when `allowTxtStatus` is enabled.
+
+```bash
+dig @192.168.0.8 uc.infra.domain.com A +short
+dig @192.168.0.8 uc.infra.domain.com TXT +short
+```
+
+The A answer should be the primary while it is healthy. The TXT answer can list both backends and their health. Here's the output from my setup.
+
+```text
+;; ANSWER SECTION:
+uc.infra.domain.com.     30      IN      TXT     "app=failover; addressType=Primary; address=192.168.0.21; healthCheck=caddy; healthStatus=Healthy;"
+uc.infra.domain.com.     30      IN      TXT     "app=failover; addressType=Secondary; address=192.168.0.22; healthCheck=caddy; healthStatus=Healthy;"
+```
+
+## Result
+
+In a test window, stop the primary Caddy instance or take its health endpoint down. After the failed check, the direct A lookup should return `192.168.0.22`. Verify an application over TLS through the secondary, then restore the primary and check that it returns to the A answer.
+
+## References
+
+- [Technitium Failover App configuration and APP records](https://github.com/TechnitiumSoftware/DnsServer/tree/master/Apps/FailoverApp)
+- [Technitium HTTP health check implementation](https://github.com/TechnitiumSoftware/DnsServer/blob/master/Apps/FailoverApp/HealthCheck.cs)
+- [Caddy respond directive](https://caddyserver.com/docs/caddyfile/directives/respond)

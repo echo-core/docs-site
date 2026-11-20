@@ -1,0 +1,118 @@
+---
+slug: /linux/AI/arch-linux-amd-npu
+---
+
+# Enabling Ryzen AI NPU for LLMs on Linux
+
+This is the setup I used on CachyOS with a Ryzen AI 7 PRO 350. My setup uses the in-kernel `amdxdna` driver and runs supported FastFlowLM models on the XDNA2 NPU.
+
+## Prerequisites
+
+- A Ryzen AI processor supported by FastFlowLM, with the NPU enabled in firmware.
+- An up-to-date CachyOS or Arch Linux installation. For the in-tree route below, use a kernel with compatible `amdxdna` and NPU firmware. FastFlowLM documents Linux 7.0 or later for this route and has separate instructions for the older Arch DKMS setup.
+- AMD NPU firmware, provided by `linux-firmware-other` in Arch's split firmware packages.
+
+## Phase 1: Verify Kernel Support
+
+### 1. Verify the In-Kernel Driver
+
+```bash
+uname -r
+modinfo -F filename amdxdna
+```
+
+In my setup the path was under `kernel/drivers/accel/amdxdna/`. A path under `updates/dkms/` means you are using a separate driver build.
+
+### 2. Verify Firmware Availability
+
+```bash
+ls /usr/lib/firmware/amdnpu
+sudo dmesg | grep -i amdxdna
+ls -l /dev/accel/
+```
+
+Match the firmware message to your actual device. On my system it showed `amdnpu/17f0_10/npu_7.sbin` and the driver initialized the accelerator. The PCI address and firmware directory can differ across models.
+
+## Phase 2: Install Userspace Runtime
+
+```bash
+sudo pacman -Syu xrt xrt-plugin-amdxdna linux-firmware-other
+```
+
+Reboot if the update installed a new kernel or firmware. XRT and its XDNA plugin connect the application to the kernel driver.
+
+## Phase 3: Verify NPU Detection
+
+```bash
+xrt-smi examine
+```
+
+Look for the NPU under **Device(s) Present** and check the reported firmware. On my system the device showed up as `NPU Krackan 1`. If it only appears when you run the command as root, check the device permissions in the next step.
+
+## Phase 4: User Permissions
+
+Check the accelerator device owner, group, and ACL from your regular account.
+
+```bash
+ls -l /dev/accel/
+id -nG
+```
+
+If your device is assigned to `render` and your login lacks access, add your user to that group.
+
+```bash
+sudo usermod -aG render "$USER"
+```
+
+Log out and back in, then rerun `xrt-smi examine` as your own user.
+
+## Phase 5: Install FastFlowLM
+
+```bash
+sudo pacman -S fastflowlm
+flm --version
+flm validate
+```
+
+Both CachyOS and Arch Extra provide the package. The executable is `flm`. Check that validation lists your NPU and compatible firmware before downloading a model.
+
+## Phase 6: Run a Model
+
+Start with a small model.
+
+```bash
+flm run gemma3:1b
+```
+
+## Verification
+
+Install `amdgpu_top` from your distribution if you want live metrics. With a prompt generating text, run `amdgpu_top` in another terminal and scroll to **XDNA fdinfo**. Look for the `flm` process there along with its NPU memory and activity. An idle sample can show 0%.
+
+## Troubleshooting
+
+### Verify Driver Status
+
+Check the firmware messages and accelerator node again if the NPU disappears after a kernel update.
+
+### Verify NPU Detection
+
+Run `xrt-smi examine` from the same account that runs FastFlowLM. `flm validate` can see an accelerator device even when XRT can't open it. If `flm run` reports no device at index 0, check that the XDNA plugin is installed and XRT can see the device.
+
+### Validation Warnings
+
+I saw `No archive found, skipping test` and `No archive provided, skipping test` from `xrt-smi validate`. Those messages indicate a skipped benchmark. Use actual model inference to verify the setup.
+
+## Deprecated Information
+
+On my compatible CachyOS kernel I was able to drop the older DKMS build and its `BUILD_EXCLUSIVE_KERNEL` and DRM scheduler workarounds. Older kernels may still need the DKMS route described by FastFlowLM. For example, some 6.19 in-tree builds expect the older firmware protocol. Use the upstream kernel/firmware guidance before changing drivers or firmware symlinks.
+
+## TL;DR
+
+On a compatible kernel, I check the driver and firmware, install XRT and FastFlowLM, verify the NPU with `xrt-smi examine` and `flm validate`, then try a small model.
+
+## References
+
+- [FastFlowLM Linux setup and firmware compatibility](https://github.com/ROCm/FastFlowLM/blob/main/docs/linux-getting-started.md)
+- [FastFlowLM model catalog](https://fastflowlm.com/docs/models/)
+- [Arch FastFlowLM package](https://archlinux.org/packages/extra/x86_64/fastflowlm/)
+- [CachyOS FastFlowLM package](https://packages.cachyos.org/package/cachyos-extra-v3/x86_64_v3/fastflowlm)

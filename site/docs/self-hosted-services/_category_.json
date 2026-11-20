@@ -1,0 +1,9 @@
+{
+  "label": "Self-Hosted Services",
+  "position": 3,
+  "link": {
+    "type": "generated-index",
+    "description": "Run and maintain PostgreSQL, Technitium DNS, and Caddy.",
+    "slug": "/category/linux-howtos---advanced"
+  }
+}

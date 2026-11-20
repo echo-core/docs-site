@@ -34,7 +34,9 @@ function Masthead() {
         <p className={styles.eyebrow}>Personal technology wiki</p>
         <Heading as="h1">{siteConfig.title}</Heading>
         <p className={styles.tagline}>{siteConfig.tagline}</p>
-        <p className={styles.introduction}>How-to guides for Linux, self-hosting, and home networking.</p>
+        <p className={styles.introduction}>
+          How-to guides for Linux, self-hosting, and whatever else I can get running on the other end of an Ethernet cable.
+        </p>
         <Link className={styles.welcome} to="/docs/welcome">
           Read the wiki
         </Link>

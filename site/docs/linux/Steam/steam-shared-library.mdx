@@ -1,80 +1,90 @@
 # Steam Shared Library
 
-This document will walk through the steps to setup a shared Steam Library so that all users on one computer can share the same game files. It assumes you are using `btrfs` as your root filesystem.
+This is how I set up one copy of the Steam game files for multiple Linux users on the same computer. I put the library on a separate Btrfs subvolume so a system rollback leaves the game files alone and I can snapshot them separately if I want to.
+
+## Prerequisites
+
+- Steam installed for each local user who will use the library. The steps below assume a native Linux Steam install.
+- A Btrfs root filesystem for the optional subvolume steps, and the `acl` tools (`getfacl` and `setfacl`). If you already have a mounted Linux filesystem that supports POSIX ACLs, use a directory on that mount in place of `/data/games`.
+- Local accounts you trust with write access to the same games. Each user still needs access to the game through their own Steam account. Start with a native Linux game. Proton prefixes live in the game's library under `steamapps/compatdata` and may need a separate library per user.
 
 ## Create mount and directory
 
-_This will avoid snapshot rollbacks messing with your game files and allow you to setup independant snapshots if you want:_
+Check the filesystem and get its UUID.
 
 ```bash
-BTRFS_MNT=$(findmnt -n -o SOURCE / | sed 's/\[.*//' | awk -F/ '{print $NF}') \
-sudo mkdir -p /data \
-sudo mount -o subvol=/ /dev/mapper/$BTRFS_MNT /mnt \
-sudo btrfs subvolume create /mnt/@data \
-cat << EOF >>/etc/fstab
-/dev/mapper/$BTRFS_MNT /data          btrfs   subvol=/@data,defaults,noatime,compress=zstd,commit=120 0 0
-EOF \
-sudo umount /mnt \
-sudo systemctl daemon-reload \
-sudo mount -av \
-mkdir -p /data/games
+findmnt -n -o SOURCE,FSTYPE,UUID /
 ```
 
-:::tip[Verify fstab]
-
-Once done, just verify the output of your `/etc/fstab` looks correct. It should look something like below.
+Replace `YOUR_BTRFS_UUID` below. Mount Btrfs subvolume ID 5 (the top level) in an empty temporary directory so `@data` is a sibling of the root subvolume. If you already have an `@data` subvolume, inspect it before using it.
 
 ```bash
-cat /etc/fstab | grep /data
-/dev/mapper/luks-72289a87-7aed-4559-a334-794c3557834a /data          btrfs   subvol=/@data,defaults,noatime,compress=zstd,commit=120 0 0
+sudo mkdir -p /mnt/steam-btrfs /data
+sudo mount -o subvolid=5 UUID=YOUR_BTRFS_UUID /mnt/steam-btrfs
+sudo btrfs subvolume create /mnt/steam-btrfs/@data
+sudo umount /mnt/steam-btrfs
 ```
 
-:::
+Add one entry with `sudoedit /etc/fstab`.
+
+```fstab
+UUID=YOUR_BTRFS_UUID /data btrfs defaults,noatime,compress=zstd,subvol=/@data 0 0
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo mount /data
+findmnt --mountpoint /data
+```
+
+Make sure the mount shows `/@data` before creating the games directory.
 
 ## Add user(s) to the `games` group
 
+Create the group if it doesn't already exist.
+
 ```bash
-sudo usermod -a -G games <user>
+sudo groupadd -f games
+sudo usermod -aG games alice
+sudo usermod -aG games bob
 ```
+
+Replace `alice` and `bob` with local usernames. Fully log out and back in before starting Steam so the new group is picked up.
 
 ## Set directory permissions and default permissions
 
 ```bash
-sudo chown root:games /data/games
-sudo setfacl -d -m g:games:rwx /data/games
+sudo install -d -o root -g games -m 2770 /data/games
+sudo setfacl -d -m u::rwx,g::rwx,o::--- /data/games
 ```
 
-For existing libraries, you can set your new default permissions recursively
+The setgid bit keeps new entries in the `games` group. The default ACL sets initial permissions for new entries, subject to the mode the application requests.
+
+For an existing library, close Steam for all users and back up the library before changing it. On a library dedicated to this group, apply the group and access permissions to the existing files and the inherited permissions to directories.
 
 ```bash
-getfacl -d /data/games|sudo setfacl -d -R --set-file=- /data/games
+sudo chgrp -R games /data/games
+sudo chmod -R g+rwX,o-rwx /data/games
+sudo find /data/games -type d -exec chmod g+s {} +
+sudo find /data/games -type d -exec setfacl -d -m u::rwx,g::rwx,o::--- {} +
 ```
 
 ## Verify permissions
 
 ```bash
+id -nG
 getfacl /data/games
-# file: data/games
-# owner: root
-# group: games
-user::rwx
-group::rwx
-group:games:rwx
-mask::rwx
-other::r-x
-default:user::rwx
-default:group::rwx
-default:group:games:rwx
-default:mask::rwx
-default:other::r-x
 ```
+
+From the first account, run `touch /data/games/.permission-check`. From the second, append to that file and remove it. This checks access to an existing file as well as the ability to create one.
 
 ## Configure Steam
 
-You should now be able login to Steam and add the new library and move the games files around without issue. Other users on the computer within the `games` group should be able to use the library.
+Open **Steam → Settings → Storage** and add `/data/games` as a library for each user. Move or install a small game from the first account. Exit Steam, log in as the second user, and verify that Steam sees the installation and can launch a game that account owns. Close one Steam session before letting another update the library. If a Proton title fails with a prefix ownership error, keep it in that user's own library.
 
-```text
-Steam > Settings > Storage > Add Drive + > Let me choose another location > Add > Browse to `/data/games` > Click `Ok`.
-```
+## References
 
-_Set the new library as the default and download or move some games to it._
+- [Valve's guide to adding a library and moving games](https://help.steampowered.com/en/faqs/view/4BD4-4528-6B2E-8327)
+- [Valve's Proton compatibility data layout](https://github.com/ValveSoftware/Proton/wiki/Proton-FAQ#where-are-my-saved-games-located)
+- [Btrfs subvolumes](https://btrfs.readthedocs.io/en/latest/btrfs-subvolume.html)
+- [Linux POSIX ACLs and file creation](https://man7.org/linux/man-pages/man5/acl.5.html)

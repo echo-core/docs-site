@@ -1,5 +1,5 @@
 ---
-title: NetBird with UFW-Docker
+slug: /linux-advanced/Netbird/netbird-ufw-docker
 description: Keep Docker services private, allow NetBird's policy-approved traffic, and verify the authorization mark used by the UFW hook.
 sidebar_position: 10
 ---
@@ -10,15 +10,17 @@ Use UFW-Docker to control public access to containers and NetBird policies to co
 
 This guide configures the public service allowances and adds a hook to the UFW-Docker integration so it recognizes NetBird-authorized traffic to private Docker services.
 
-## Before you start
+<a id="before-you-start" />
+
+## Prerequisites
 
 This guide assumes:
 
 - A Linux host using UFW and systemd.
-- Docker bridge networking with the iptables-nft backend and a `DOCKER-USER` chain.
+- Docker bridge networking with Docker's `iptables` firewall backend, the `iptables-nft` frontend, and an active jump to `DOCKER-USER` in `FORWARD`. Docker's native `nftables` backend is a different configuration and does not create that jump.
 - NetBird installed on the host, using the `wt0` interface.
 
-The hook covers the IPv4 NetBird path. Recheck the mark and firewall backend before applying it elsewhere or after an upgrade.
+The hook covers the IPv4 NetBird path. I used the NetBird rules shown below to check the local-service mark. Recheck the mark, the Docker jump with `iptables -S FORWARD`, and the firewall backend after an upgrade. A leftover `DOCKER-USER` chain on its own doesn't tell you which backend is active.
 
 ## How the firewall layers fit together
 
@@ -184,7 +186,7 @@ default base 0x1bd00 | redirected offset 0x20 = 0x1bd20
 The [`queuePreroutingRule` and `addFwmarkToForward` functions](https://github.com/netbirdio/netbird/blob/v0.83.1/client/firewall/nftables/chains_linux.go) show where NetBird sets and accepts it for traffic redirected from the host to a container.
 
 :::note[Use the running rules as the source of truth]
-`NB_FWMARK_BASE` can change NetBird's mark range. A different release, backend, or configuration may also change the rules. Confirm the paired mark-and-accept behavior before copying the value below. If the `ip netbird` table is absent, identify the actual backend/table first.
+`NB_FWMARK_BASE` can change NetBird's mark range. A different release, backend, or configuration may also change the rules. Keep services private by default if you cannot verify both the setting rule and the accept rule on the installed release. Confirm the paired mark-and-accept behavior before copying the value below. If the `ip netbird` table is absent, identify the actual backend/table first.
 
 This is a **packet mark** (`meta mark`, matched by iptables `-m mark`). It is different from a connection mark (`ct mark`) and from NetBird's masquerade marks. The hook reads it; it never assigns authorization marks itself.
 :::
@@ -394,6 +396,7 @@ Remove only the drop-in created by this guide. Do not flush the firewall or rest
 - [UFW-Docker project and installation](https://github.com/chaifeng/ufw-docker)
 - [UFW-Docker maintainer guidance for VPN/container access](https://github.com/chaifeng/ufw-docker/issues/47)
 - [UFW customization hooks](https://manpages.debian.org/trixie/ufw/ufw-framework.8.en.html)
+- [Docker native nftables backend and DOCKER-USER migration](https://docs.docker.com/engine/network/firewall-nftables/#migrating-from-iptables-to-nftables)
 - [Docker firewall chains and DNAT](https://docs.docker.com/engine/network/firewall-iptables/)
 - [NetBird ports and host firewalls](https://docs.netbird.io/about-netbird/ports-and-firewalls)
 - [NetBird's explanation of Docker peer-ACL marking](https://github.com/netbirdio/netbird/issues/4351)
