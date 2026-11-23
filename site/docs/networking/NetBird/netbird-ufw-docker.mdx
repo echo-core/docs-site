@@ -8,7 +8,7 @@ sidebar_position: 10
 
 Use UFW-Docker to control public access to containers and NetBird policies to control access between peers. This lets you publish the NetBird services that need internet access while keeping sensitive services available only to selected peers.
 
-This guide configures the public service allowances and adds a hook to the UFW-Docker integration so it recognizes NetBird-authorized traffic to private Docker services.
+This guide configures public service allowances in UFW-Docker and private peer access in the NetBird dashboard. It uses the host NetBird client's iptables backend to enforce peer policy before Docker's forwarding rules. A UFW hook passes approved connections when UFW-Docker checks them.
 
 <a id="before-you-start" />
 
@@ -18,7 +18,7 @@ This guide assumes:
 
 - A Linux host using UFW and systemd.
 - Docker bridge networking with Docker's `iptables` firewall backend, the `iptables-nft` frontend, and an active jump to `DOCKER-USER` in `FORWARD`. Docker's native `nftables` backend is a different configuration and does not create that jump.
-- NetBird installed on the host, using the `wt0` interface.
+- NetBird installed as a systemd service on the Linux host, using kernel routing and the `wt0` interface. The backend and rule examples below are for host client v0.83.2.
 
 The hook covers the IPv4 NetBird path. I used the NetBird rules shown below to check the local-service mark. Recheck the mark, the Docker jump with `iptables -S FORWARD`, and the firewall backend after an upgrade. A leftover `DOCKER-USER` chain on its own doesn't tell you which backend is active.
 
@@ -112,11 +112,11 @@ This example uses `NB_PROXY_WG_PORT=51820`. Publish the same UDP port in Docker 
 
 ## Keep sensitive services private
 
-Choose which peers may access each private service, then create a NetBird policy for that access. For example, to restrict PostgreSQL on TCP 5432:
+Choose which peers may access each private service, then create its allow policy in the NetBird dashboard. The same host integration handles future private services without adding per-port UFW rules. For example, to restrict PostgreSQL on TCP 5432:
 
 1. Put the permitted client peers in a source group.
 2. Put the peer hosting the container in a destination group.
-3. Create an allow policy between those groups for TCP 5432.
+3. Create an allow policy for TCP 5432 from the source group to the destination group.
 4. Check other policies and routes for broader access to the same destination.
 
 Use the protocol and port for your own service. PostgreSQL is only the example used in the commands below. The container must already have a Docker-published port reachable through the host's NetBird address; the firewall hook does not publish ports.
@@ -135,60 +135,47 @@ Without that integration, a packet accepted by NetBird can still reach a UFW-Doc
 
 The addresses are examples. The incoming interface, destination port, and mark identify the path. This is a direct connection to the host's NetBird address; Docker DNAT puts it on the forwarding path without requiring the client to use an exit node.
 
-Avoid a blanket `ufw route allow in on wt0` exception when you need to preserve NetBird's service-level restrictions. It admits matching forwarded traffic without checking the authorization mark, including traffic permitted by broader routing rules. The hook below matches the mark for authorized local-service traffic instead.
+Avoid a blanket `ufw route allow in on wt0` exception when you need to preserve NetBird's service-level restrictions. It admits matching forwarded traffic without checking the authorization mark, including traffic permitted by broader routing rules. On a routing peer, NetBird's nftables backend can also insert a broad `wt0` accept before Docker's jump to `DOCKER-USER`. An unmarked connection can then skip UFW-Docker and match a broader routed allowance. The iptables backend selected below checks new DNAT traffic earlier, in the mangle table. Keep the mark-based UFW hook for the opposite ordering, where UFW-Docker sees an approved connection first.
 
 ## Find NetBird's authorization mark
 
-Identify the mark from the running firewall, then confirm its meaning in the corresponding NetBird source. This connects the value used by the hook to the policy rules that set and accept it.
+From your independent management connection, check `netbird version`, `iptables --version` and `iptables -t mangle -S FORWARD`. A frontend version ending in `(nf_tables)` is normal for `iptables-nft`. The frontend version alone cannot tell you which firewall manager the host NetBird client selected.
 
-Start with:
+On v0.83.2, select the iptables manager for the host client with `NB_SKIP_NFTABLES_CHECK=true`. This setting belongs to the daemon. The Docker daemon and the self-hosted NetBird server container have separate settings. [NetBird client environment variables](https://docs.netbird.io/client/environment-variables#firewall).
+
+Inspect the host service and its existing drop-ins with `systemctl cat netbird.service`. If the setting already exists, verify the live rules below. Otherwise, create the drop-in directory with `install -d -m 0755 /etc/systemd/system/netbird.service.d` if needed, then add the dedicated file `/etc/systemd/system/netbird.service.d/firewall-backend.conf` with the following contents. Keep any existing drop-ins and environment settings.
+
+```ini
+[Service]
+Environment=NB_SKIP_NFTABLES_CHECK=true
+```
+
+Activate it from the independent connection. Restarting this client briefly interrupts its tunnel.
 
 ```bash
-netbird version
-iptables --version
-nft list chain ip netbird netbird-mangle-prerouting
-nft list chain ip netbird netbird-acl-input-rules
-nft list chain ip netbird netbird-acl-forward-filter
+systemctl daemon-reload
+systemctl restart netbird.service
+netbird status
+iptables -t mangle -S PREROUTING
+iptables -t mangle -S NETBIRD-RT-PRE
+iptables -S NETBIRD-ACL-INPUT
+iptables -t mangle -S FORWARD
+iptables -S FORWARD
 ```
 
-On an nftables-backed installation, look for a rule like this for an allowed peer and service:
+In mangle PREROUTING, follow the jump to `NETBIRD-RT-PRE`. Find the permitted source (or source set), protocol and service, the local destination match, and `MARK --set-xmark`. The default local-service mark is `0x1bd20`. Check that the corresponding rule in `NETBIRD-ACL-INPUT` grants the intended traffic. This guide uses an explicit allow policy and tests a peer with no matching grant. If your policies include explicit drops, test them separately. In v0.83.2 the mark-setting rule alone does not distinguish the peer ACL action. [Peer ACL implementation](https://github.com/netbirdio/netbird/blob/v0.83.2/client/firewall/iptables/filter_linux.go).
+
+In mangle FORWARD, look for these two rules in order (mark formatting can vary):
 
 ```text
-iifname "wt0" ip saddr 100.64.0.10 tcp dport 5432 fib daddr type local meta mark set 0x0001bd20
+-A FORWARD -i wt0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A FORWARD -i wt0 -m conntrack --ctstate DNAT -m mark ! --mark 0x1bd20 -j DROP
 ```
 
-Read it as: when this peer sends TCP 5432 traffic through `wt0` to a local address, set the packet mark before Docker changes the destination.
-
-Check that the peer ACL also grants the expected source and port. In `netbird-acl-input-rules`, the corresponding rule should grant the same source and port:
-
-```text
-ip saddr 100.64.0.10 tcp dport 5432 accept
-```
-
-A mark value by itself is not evidence of permission; check the policy rule and its action too.
-
-The forward filter should also accept the mark before evaluating other forwarding rules:
-
-```text
-meta mark 0x0001bd20 accept
-iifname "wt0" jump netbird-rt-fwd
-iifname "wt0" drop
-```
-
-The matching `accept` confirms what the mark is used for. The leading zeroes are only formatting: `0x0001bd20` and `0x1bd20` are the same number.
-
-NetBird's [`client/net/fwmark.go`](https://github.com/netbirdio/netbird/blob/v0.83.1/client/net/fwmark.go) names this value `PreroutingFwmarkRedirected`. Its default calculation is:
-
-```text
-default base 0x1bd00 | redirected offset 0x20 = 0x1bd20
-```
-
-The [`queuePreroutingRule` and `addFwmarkToForward` functions](https://github.com/netbirdio/netbird/blob/v0.83.1/client/firewall/nftables/chains_linux.go) show where NetBird sets and accepts it for traffic redirected from the host to a container.
+The second rule drops new, unmarked connections to translated destinations before filter FORWARD runs. It applies to DNAT entering on `wt0` across ports. Check other DNAT uses on that interface if the host also forwards services for other networks. A direct connection to a routed container address follows the routed-resource policy and needs its own access test. [NetBird v0.83.2 forward rules](https://github.com/netbirdio/netbird/blob/v0.83.2/client/firewall/iptables/chains_linux.go).
 
 :::note[Use the running rules as the source of truth]
-`NB_FWMARK_BASE` can change NetBird's mark range. A different release, backend, or configuration may also change the rules. Keep services private by default if you cannot verify both the setting rule and the accept rule on the installed release. Confirm the paired mark-and-accept behavior before copying the value below. If the `ip netbird` table is absent, identify the actual backend/table first.
-
-This is a **packet mark** (`meta mark`, matched by iptables `-m mark`). It is different from a connection mark (`ct mark`) and from NetBird's masquerade marks. The hook reads it; it never assigns authorization marks itself.
+`NB_FWMARK_BASE`, the backend and the client version can change the expected rules. Verify the peer ACL, the mark-setting rule, the early DNAT drop and the filter FORWARD accept for the same mark. Confirm all four on the installed release before copying the mark into the hook. NetBird assigns the packet mark and the hook reads it using `-m mark`.
 :::
 
 ## Add the UFW-Docker integration hook
@@ -327,7 +314,7 @@ iptables -nvL DOCKER-USER --line-numbers
 iptables -S DOCKER-USER
 ```
 
-There should be exactly one rule commented `NetBird-authorized local service`, before the UFW-Docker checks. Calling `start` again should not duplicate it. Its counter should increase when the approved peer connects.
+There should be exactly one rule commented `NetBird-authorized local service`, before the UFW-Docker checks. Calling `start` again should not duplicate it. Check counters with `iptables -t mangle -nvL FORWARD --line-numbers` and `iptables -nvL FORWARD --line-numbers` as well. The hook counter can stay at zero when NetBird's marked accept or route chain handles the approved connection before `DOCKER-USER`. A fresh denied connection that reaches the host should increment the mangle DNAT drop counter.
 
 Make fresh TCP connections from each relevant source. For example, with netcat available:
 
@@ -344,9 +331,9 @@ Use the public IP instead of the NetBird hostname for the external test. A succe
 | Peer without that grant → host NetBird address | Blocked |
 | External client → host public address, TCP 5432 | Blocked |
 
-Confirm all four results before relying on the configuration. Test from the actual application environment as well as the peer host, since containers can use different network paths.
+Test from the actual application environment as well as the peer host, since containers can use different network paths. To check a dashboard policy update, grant a test peer access to a disposable published service, open a fresh connection, revoke the grant and try a new connection. Keep the public port blocked throughout.
 
-Repeat these checks after a planned reboot, Docker restart, or UFW reload to verify that the hook is reapplied. Test IPv6 independently if your service or overlay uses it.
+Repeat the fresh connections and inspect both rule sets after a planned NetBird client restart, Docker restart, UFW reload or reboot. Check your existing public HTTPS, STUN and proxy services, and any routed resources or exit traffic the host serves. Test IPv6 independently if your service or overlay uses it.
 
 <a id="troubleshooting--maintenance" />
 
@@ -379,7 +366,18 @@ After a NetBird update, repeat the mark inspection and all four access tests. Ch
 
 ### Roll back the hook
 
-Use the backup directory saved during installation. Stop the hook **before** restoring the original file so the live exception is removed:
+To reverse only the backend selection, remove the dedicated file if you created it. Use your independent management connection:
+
+```bash
+rm /etc/systemd/system/netbird.service.d/firewall-backend.conf
+systemctl daemon-reload
+systemctl restart netbird.service
+netbird status
+```
+
+This restores the previous backend selection on the next client startup. Repeat the allowed-peer, denied-peer and public tests. The original backend and rule order can restore broader access to published ports.
+
+To also remove the UFW-Docker hook installed by this guide, use the backup directory saved during installation. Stop the hook **before** restoring the original file so the live exception is removed:
 
 ```bash
 /etc/ufw/after.init stop
@@ -400,5 +398,5 @@ Remove only the drop-in created by this guide. Do not flush the firewall or rest
 - [Docker firewall chains and DNAT](https://docs.docker.com/engine/network/firewall-iptables/)
 - [NetBird ports and host firewalls](https://docs.netbird.io/about-netbird/ports-and-firewalls)
 - [NetBird's explanation of Docker peer-ACL marking](https://github.com/netbirdio/netbird/issues/4351)
-- [NetBird mark definitions](https://github.com/netbirdio/netbird/blob/v0.83.1/client/net/fwmark.go)
-- [NetBird prerouting and forwarding implementation](https://github.com/netbirdio/netbird/blob/v0.83.1/client/firewall/nftables/chains_linux.go)
+- [NetBird v0.83.2 mark definitions](https://github.com/netbirdio/netbird/blob/v0.83.2/client/net/fwmark.go)
+- [NetBird v0.83.2 firewall manager selection](https://github.com/netbirdio/netbird/blob/v0.83.2/client/firewall/create_linux.go)
