@@ -18,7 +18,7 @@ This guide assumes:
 
 - A Linux host using UFW and systemd.
 - Docker bridge networking with Docker's `iptables` firewall backend, the `iptables-nft` frontend, and an active jump to `DOCKER-USER` in `FORWARD`. Docker's native `nftables` backend is a different configuration and does not create that jump.
-- NetBird installed as a systemd service on the Linux host, using kernel routing and the `wt0` interface. The backend and rule examples below are for host client v0.83.2.
+- NetBird installed as a systemd service on the Linux host, using kernel routing and the `wt0` interface.
 
 The hook covers the IPv4 NetBird path. I used the NetBird rules shown below to check the local-service mark. Recheck the mark, the Docker jump with `iptables -S FORWARD`, and the firewall backend after an upgrade. A leftover `DOCKER-USER` chain on its own doesn't tell you which backend is active.
 
@@ -139,9 +139,9 @@ Avoid a blanket `ufw route allow in on wt0` exception when you need to preserve 
 
 ## Find NetBird's authorization mark
 
-From your independent management connection, check `netbird version`, `iptables --version` and `iptables -t mangle -S FORWARD`. A frontend version ending in `(nf_tables)` is normal for `iptables-nft`. The frontend version alone cannot tell you which firewall manager the host NetBird client selected.
+From your independent management connection, check `iptables --version` and `iptables -t mangle -S FORWARD`. A frontend version ending in `(nf_tables)` is normal for `iptables-nft`. The frontend version alone cannot tell you which firewall manager the host NetBird client selected.
 
-On v0.83.2, select the iptables manager for the host client with `NB_SKIP_NFTABLES_CHECK=true`. This setting belongs to the daemon. The Docker daemon and the self-hosted NetBird server container have separate settings. [NetBird client environment variables](https://docs.netbird.io/client/environment-variables#firewall).
+Select the iptables manager for the host client with `NB_SKIP_NFTABLES_CHECK=true`. This setting belongs to the daemon. The Docker daemon and the self-hosted NetBird server container have separate settings. [NetBird client environment variables](https://docs.netbird.io/client/environment-variables#firewall).
 
 Inspect the host service and its existing drop-ins with `systemctl cat netbird.service`. If the setting already exists, verify the live rules below. Otherwise, create the drop-in directory with `install -d -m 0755 /etc/systemd/system/netbird.service.d` if needed, then add the dedicated file `/etc/systemd/system/netbird.service.d/firewall-backend.conf` with the following contents. Keep any existing drop-ins and environment settings.
 
@@ -163,7 +163,7 @@ iptables -t mangle -S FORWARD
 iptables -S FORWARD
 ```
 
-In mangle PREROUTING, follow the jump to `NETBIRD-RT-PRE`. Find the permitted source (or source set), protocol and service, the local destination match, and `MARK --set-xmark`. The default local-service mark is `0x1bd20`. Check that the corresponding rule in `NETBIRD-ACL-INPUT` grants the intended traffic. This guide uses an explicit allow policy and tests a peer with no matching grant. If your policies include explicit drops, test them separately. In v0.83.2 the mark-setting rule alone does not distinguish the peer ACL action. [Peer ACL implementation](https://github.com/netbirdio/netbird/blob/v0.83.2/client/firewall/iptables/filter_linux.go).
+In mangle PREROUTING, follow the jump to `NETBIRD-RT-PRE`. Find the permitted source (or source set), protocol and service, the local destination match, and `MARK --set-xmark`. The default local-service mark is `0x1bd20`. Check that the corresponding rule in `NETBIRD-ACL-INPUT` grants the intended traffic. This guide uses an explicit allow policy and tests a peer with no matching grant. If your policies include explicit drops, check the ACL action and test a fresh connection from a denied peer. [Peer ACL implementation](https://github.com/netbirdio/netbird/blob/6d4814d22726c16961be79409dfbf6a2b2f7537b/client/firewall/iptables/filter_linux.go).
 
 In mangle FORWARD, look for these two rules in order (mark formatting can vary):
 
@@ -172,10 +172,10 @@ In mangle FORWARD, look for these two rules in order (mark formatting can vary):
 -A FORWARD -i wt0 -m conntrack --ctstate DNAT -m mark ! --mark 0x1bd20 -j DROP
 ```
 
-The second rule drops new, unmarked connections to translated destinations before filter FORWARD runs. It applies to DNAT entering on `wt0` across ports. Check other DNAT uses on that interface if the host also forwards services for other networks. A direct connection to a routed container address follows the routed-resource policy and needs its own access test. [NetBird v0.83.2 forward rules](https://github.com/netbirdio/netbird/blob/v0.83.2/client/firewall/iptables/chains_linux.go).
+The second rule drops new, unmarked connections to translated destinations before filter FORWARD runs. It applies to DNAT entering on `wt0` across ports. Check other DNAT uses on that interface if the host also forwards services for other networks. A direct connection to a routed container address follows the routed-resource policy and needs its own access test. [NetBird forwarding rules](https://github.com/netbirdio/netbird/blob/6d4814d22726c16961be79409dfbf6a2b2f7537b/client/firewall/iptables/chains_linux.go).
 
 :::note[Use the running rules as the source of truth]
-`NB_FWMARK_BASE`, the backend and the client version can change the expected rules. Verify the peer ACL, the mark-setting rule, the early DNAT drop and the filter FORWARD accept for the same mark. Confirm all four on the installed release before copying the mark into the hook. NetBird assigns the packet mark and the hook reads it using `-m mark`.
+The firewall backend and `NB_FWMARK_BASE` affect the rules you see. Verify the peer ACL, the mark-setting rule, the early DNAT drop and the filter FORWARD accept for the same mark. Confirm all four on the host before copying the mark into the hook. NetBird assigns the packet mark and the hook reads it using `-m mark`.
 :::
 
 ## Add the UFW-Docker integration hook
@@ -398,5 +398,5 @@ Remove only the drop-in created by this guide. Do not flush the firewall or rest
 - [Docker firewall chains and DNAT](https://docs.docker.com/engine/network/firewall-iptables/)
 - [NetBird ports and host firewalls](https://docs.netbird.io/about-netbird/ports-and-firewalls)
 - [NetBird's explanation of Docker peer-ACL marking](https://github.com/netbirdio/netbird/issues/4351)
-- [NetBird v0.83.2 mark definitions](https://github.com/netbirdio/netbird/blob/v0.83.2/client/net/fwmark.go)
-- [NetBird v0.83.2 firewall manager selection](https://github.com/netbirdio/netbird/blob/v0.83.2/client/firewall/create_linux.go)
+- [NetBird mark definitions](https://github.com/netbirdio/netbird/blob/6d4814d22726c16961be79409dfbf6a2b2f7537b/client/net/fwmark.go)
+- [NetBird firewall manager selection](https://github.com/netbirdio/netbird/blob/6d4814d22726c16961be79409dfbf6a2b2f7537b/client/firewall/create_linux.go)
